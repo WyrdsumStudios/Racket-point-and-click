@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0d1714">
+  <title>Racket's Garage</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600&family=Nunito:wght@400;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <!-- shared SVG gradients/filters live here -->
+  <svg id="defs" width="0" height="0" style="position:absolute" aria-hidden="true"></svg>
+
+  <div id="app">
+    <header id="hud">
+      <div class="hud-left">
+        <div id="loc">Crash Site</div>
+        <div id="obj"></div>
+      </div>
+      <div class="hud-right">
+        <div id="credits" title="Scrap credits"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2l2.2 2.6 3.3-.6.6 3.3L21 9.5 19.6 12l1.4 2.5-2.9 2.2-.6 3.3-3.3-.6L12 22l-2.2-2.6-3.3.6-.6-3.3L3 14.5 4.4 12 3 9.5l2.9-2.2.6-3.3 3.3.6z" fill="#d9b45a"/><circle cx="12" cy="12" r="4" fill="#5a4320"/></svg><b>0</b><span class="cr">cr</span></div>
+        <button class="hud-btn" data-act="hint" title="Show clickable things" aria-label="Show clickable things"><svg viewBox="0 0 24 24"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="3.2" fill="currentColor"/></svg></button>
+        <button class="hud-btn" data-act="ship" title="Ship repairs" aria-label="Ship repairs"><svg viewBox="0 0 24 24"><path d="M9 4h6v3H9zM5 7h14v14H5z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M8 12l2 2 4-4M8 17h8" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/></svg></button>
+        <button class="hud-btn" data-act="map" title="Map" aria-label="Map"><svg viewBox="0 0 24 24"><path d="M3 6l6-2 6 2 6-2v14l-6 2-6-2-6 2z M9 4v14 M15 6v14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg></button>
+        <button class="hud-btn" data-act="sound" title="Sound effects &amp; ambience" aria-label="Toggle sound"><svg viewBox="0 0 24 24"><path d="M4 9h4l5-4v14l-5-4H4z" fill="currentColor"/><path class="wave" d="M16 8.5a5 5 0 010 7M18.5 6a8.5 8.5 0 010 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path class="slash" d="M3 3l18 18" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg></button>
+        <button class="hud-btn" data-act="music" title="Music" aria-label="Toggle music"><svg viewBox="0 0 24 24"><path d="M9 18V5l11-2v13" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><circle cx="6.5" cy="18" r="2.6" fill="currentColor"/><circle cx="17.5" cy="16" r="2.6" fill="currentColor"/><path class="slash" d="M3 3l18 18" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg></button>
+        <button class="hud-btn" data-act="menu" title="Menu" aria-label="Menu"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button>
+      </div>
+    </header>
+
+    <main id="stage-wrap">
+      <div id="stage">
+        <svg id="scene" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Game scene"></svg>
+        <div id="bubbles"></div>
+        <div id="tooltip"></div>
+      </div>
+    </main>
+
+    <footer id="tray">
+      <div id="inv"></div>
+      <div id="desc"></div>
+    </footer>
+  </div>
+
+  <!-- Dialogue -->
+  <div id="dlg" class="hidden" data-speaker="r">
+    <div class="dlg-portrait left"><div class="pframe" id="p-r"></div><div class="pname">Racket</div></div>
+    <div class="dlg-main">
+      <div class="dlg-log" id="dlg-log"></div>
+      <div class="dlg-choices" id="dlg-choices"></div>
+      <div class="dlg-next" id="dlg-next">tap ▾</div>
+    </div>
+    <div class="dlg-portrait right"><div class="pframe" id="p-c"></div><div class="pname">Crystal</div></div>
+  </div>
+
+  <!-- Modal -->
+  <div id="modal" class="hidden">
+    <div class="modal-card">
+      <header><h2 class="modal-title"></h2><button class="x" aria-label="Close">✕</button></header>
+      <div class="modal-body"></div>
+    </div>
+  </div>
+
+  <!-- Narrative card -->
+  <div id="card" class="hidden"></div>
+
+  <!-- Title -->
+  <div id="title" class="hidden">
+    <svg id="title-art" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid slice" aria-hidden="true"></svg>
+    <div class="title-ui">
+      <div class="title-logo">
+        <span class="t-small">a cozy point-and-click</span>
+        <h1>Racket's <span>Garage</span></h1>
+        <p>Broken ships, grumpy raccoons, and a friendship that takes some fixing.</p>
+      </div>
+      <div class="title-btns">
+        <button class="btn big" id="btn-continue" hidden>Continue</button>
+        <button class="btn big ghost" id="btn-new">New Game</button>
+      </div>
+      <div class="title-toggles">
+        <button class="hud-btn" id="t-sound" aria-label="Toggle sound"><svg viewBox="0 0 24 24"><path d="M4 9h4l5-4v14l-5-4H4z" fill="currentColor"/><path class="wave" d="M16 8.5a5 5 0 010 7M18.5 6a8.5 8.5 0 010 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path class="slash" d="M3 3l18 18" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg></button>
+        <button class="hud-btn" id="t-music" aria-label="Toggle music"><svg viewBox="0 0 24 24"><path d="M9 18V5l11-2v13" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><circle cx="6.5" cy="18" r="2.6" fill="currentColor"/><circle cx="17.5" cy="16" r="2.6" fill="currentColor"/><path class="slash" d="M3 3l18 18" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg></button>
+      </div>
+      <small class="build">Phase 1 play-test build · progress autosaves</small>
+    </div>
+  </div>
+
+  <script src="js/audio.js"></script>
+  <script src="js/art.js"></script>
+  <script src="js/data.js"></script>
+  <script src="js/engine.js"></script>
+</body>
+</html>
