@@ -642,3 +642,68 @@ button.slot:hover { border-color: #4a7d6d; }
   .cafe-cup { width: 120px; }
   .cafe-recipe span { display: none; }
 }
+
+/* =====================================================================
+   PHASE 4
+   ===================================================================== */
+:root { --steward: #c9a052; }
+#dlg.npc-steward .left .pframe { border-color: var(--steward); background: radial-gradient(circle at 50% 40%, #f6eedc, #b89a6a 60%, #5a4a30); }
+#dlg.npc-steward .left .pname { color: #ffe08a; }
+.line.s { align-self: flex-start; background: #3a3020; border: 1px solid var(--steward); border-bottom-left-radius: 4px; font-family: ui-monospace, 'SFMono-Regular', Menlo, monospace; font-size: 14.5px; }
+.line.s .who { color: #ffe08a; font-family: var(--font-head); }
+.bubble.s { background: #fff7e0; border: 2px solid var(--steward); font-family: ui-monospace, monospace; font-size: clamp(11px, 1.3vw, 15px); }
+.bubble.s::after { border-top-color: var(--steward); }
+.bubble.s .b-name { color: #8a6420; }
+.steward .st-upper { animation: breathe 4.5s ease-in-out infinite; }
+
+/* rope knots */
+.knots { display: grid; gap: 12px; justify-items: center; }
+.knot-vex { display: flex; gap: 12px; align-items: center; width: 100%; padding: 10px 12px; border-radius: 14px; background: #262c4a; border: 1px solid var(--vex); }
+.knot-vex svg { width: 60px; height: 60px; border-radius: 50%; flex-shrink: 0; background: radial-gradient(circle at 50% 38%, #c9d2f2, #6a78b0 55%, #2a3050); }
+.knot-vex p { margin: 0; color: #e6eaff; font-weight: 700; }
+.knot-rope { min-height: 44px; display: flex; gap: 6px; align-items: center; padding: 6px 14px; border-radius: 999px; background: #3a2a1c; border: 2px dashed #c9a06a; font-size: 22px; color: #f6ead0; }
+.knot-rope i { width: 30px; height: 4px; background: #c9a06a; border-radius: 2px; }
+.knot-pad { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; width: min(480px, 100%); }
+.knot-btn { display: grid; gap: 4px; justify-items: center; padding: 14px 6px; border-radius: 14px; border: 2px solid #5a3f2e; background: #2a1c14; font-weight: 800; color: #f6ead0; transition: transform .1s, background .15s, box-shadow .15s; }
+.knot-btn span { font-size: 26px; }
+.knot-btn.lit { background: #c9a06a; color: #2a1a10; box-shadow: 0 0 18px #ffd08a; transform: scale(1.06); }
+.knot-btn:disabled { opacity: .75; cursor: default; }
+
+/* moss grooming */
+.mossgame { display: grid; gap: 10px; }
+.moss-back { position: relative; display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; padding: 26px 22px 60px; border-radius: 50% 50% 18px 18px / 70% 70% 18px 18px; background: radial-gradient(ellipse at 50% 30%, #5a8a46, #22401e); border: 3px solid #1a3016; }
+.tuft { aspect-ratio: 1; border: 0; border-radius: 50%; background: radial-gradient(circle at 40% 35%, #7aaa5a, #3a6a2a); transition: transform .15s, box-shadow .2s, background .2s; padding: 0; }
+.tuft.loose { background: radial-gradient(circle at 40% 35%, #dfffe8, #9fffd0 40%, #4fd18a); box-shadow: 0 0 16px #9fffd0; transform: scale(1.12) translateY(-3px); }
+.tuft.brushed { transform: scale(.7); opacity: .5; }
+.moss-face { position: absolute; right: 18px; bottom: 10px; font-size: 22px; color: #0e1a0e; background: #3a5a30; border-radius: 40% 40% 50% 50%; padding: 6px 14px; }
+.moss-face span { position: absolute; top: -18px; right: -6px; font-size: 13px; color: #cfe; animation: notes 3s ease-in-out infinite; }
+
+/* rivet rhythm */
+.rivetgame { display: grid; gap: 12px; }
+.rv-plate { padding: 14px; border-radius: 12px; background: linear-gradient(#f6eedc, #c8b890); border: 3px solid #5a4a30; cursor: pointer; }
+.rv-holes { display: grid; grid-template-columns: repeat(8, 1fr); gap: 10px; }
+.rv-holes i { aspect-ratio: 1; border-radius: 50%; background: #3a3024; box-shadow: inset 0 2px 4px rgba(0,0,0,.5); transition: background .15s, transform .15s; }
+.rv-holes i.on { background: radial-gradient(circle at 35% 30%, #fff3c0, #d9a441 55%, #8a6420); transform: scale(1.1); }
+.rv-track { position: relative; height: 64px; border-radius: 14px; background: #0f1916; border: 2px solid #2a3d36; overflow: hidden; }
+.rv-line { position: absolute; left: 12%; top: 0; bottom: 0; width: 6px; margin-left: -3px; background: #ffcf6a; box-shadow: 0 0 14px #ffcf6a; }
+.rv-note { position: absolute; top: 50%; width: 30px; height: 30px; margin: -15px 0 0 -15px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #fff3c0, #d9a441 55%, #8a6420); box-shadow: 0 0 8px rgba(217,164,65,.7); }
+
+/* bolt bin IV: conveyor */
+.belt { position: relative; height: 110px; border-radius: 14px; background: #2a2e32; border: 3px solid #4d555b; overflow: hidden; }
+.belt-stripes { position: absolute; inset: 0; background: repeating-linear-gradient(90deg, #3a3f44 0 18px, #2a2e32 18px 36px); animation: beltMove 1.2s linear infinite; opacity: .8; }
+@keyframes beltMove { from { background-position: 0 0; } to { background-position: 36px 0; } }
+.cv-item { position: absolute; top: 50%; width: 64px; height: 92px; margin: -46px 0 0 -32px; padding: 4px; border: 2px solid transparent; border-radius: 12px; background: rgba(0,0,0,.2); }
+.cv-item svg { width: 100%; height: 100%; }
+.cv-item.sel { border-color: var(--teal); background: rgba(79,209,184,.18); }
+
+@media (max-width: 620px) {
+  .knot-btn { padding: 10px 4px; font-size: 13px; }
+  .knot-btn span { font-size: 20px; }
+  .rv-holes { gap: 6px; }
+  .moss-back { gap: 5px; padding: 18px 14px 50px; }
+}
+@media (orientation: landscape) and (max-height: 520px) {
+  .rv-plate { padding: 8px; } .rv-holes { gap: 5px; grid-template-columns: repeat(16, 1fr); }
+  .moss-back { grid-template-columns: repeat(12, 1fr); padding: 14px 14px 40px; }
+  .belt { height: 84px; } .cv-item { width: 50px; height: 72px; margin: -36px 0 0 -25px; }
+}

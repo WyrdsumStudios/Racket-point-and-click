@@ -2,7 +2,7 @@
 
 A cozy, slightly gritty sci-fi point-and-click adventure. Crystal Lynx crash-lands her scout ship, the *Dandelion*, in the woods of an alien moon. The only mechanic for miles is Racket, a tall, grumpy, sarcastic raccoon who agrees to fix it mostly so she'll leave. Scavenge parts, earn scrap credits, shop a very sketchy parts marketplace, and slowly win him over.
 
-**Status: Phase 3 play-test build** (Phases 1, 2 and 3 are playable).
+**Status: Phase 4 play-test build** (Phases 1 to 4 are playable).
 
 ## Play
 
@@ -54,6 +54,17 @@ It works on desktop (mouse and keyboard) and on tablets (touch, landscape or por
 - **Story:** at the wreck, Racket tells how he crashed. He ordered Vex into the only escape pod, rode the Long Shot down alone, waited over two hundred days, then built the garage from her bones. Comfort him or give him space. Bring Vex the flight recorder and help the two of them finally clear the air. Afterwards Racket gives Crystal the Long Shot's crew patch for her jacket. Friendship can reach tier 4.
 - **Backstory fix:** the Phase 2 roof scene now makes it clear the person he told to bail was Vex, and that she landed safely.
 
+## What's in Phase 4
+
+- **New scenes:** the Canyon Rim (red-and-teal canyon at sunset, Vex's truck, a broken rope bridge) and the Gilded Gull, a sunken luxury liner at the bottom of the canyon, still guarded by STEWARD-9, an extremely polite robot steward who has been waiting forty years.
+- **Fourth repair, hull plating:**
+  - **Hull plates:** fix the rope bridge with Vex (Rope Knots), get aboard the Gilded Gull with a commemorative boarding pass from JunkNet (robots love paperwork), and cut the plates loose with the torch. Vex winches them up.
+  - **Gold rivets:** from the liner's purser's desk. The rivet gun is on Racket's pegboard.
+  - **Sealant:** groom the sleeping mossback in the Deep Woods for its glowing moss (Moss Grooming).
+  - At the workbench: install the plates and moss, rivet them in time (Rivet Rhythm), then pressure-test.
+- **Story:** Vex road-trips with Crystal while Racket stays home glaring at the engine core. One of the three plates goes missing back at the garage. The scanner finds it under the workbench, and Racket admits he hid it because a fixed ship means Crystal leaves. Crystal's answers are reassuring but leave the ending open. The hull celebration finally exposes Racket's love of the French Vanilla Monstrosity to Vex, then the engine core makes the new noise.
+- **Mini-games:** Rope Knots (repeat Vex's sequence), Moss Grooming (brush the glowing tufts), Rivet Rhythm, and Bolt Bin IV (a conveyor belt). All join the job board's For Fun section once beaten.
+
 ## The Garage Café
 
 A coffee cart in the garage corner, under the job board: an old espresso machine, a kettle, mismatched mugs and a creamer shelf. It's broken until Phase 1 is done, then Racket fixes it ("Don't make it weird. ...Make me something.").
@@ -73,10 +84,12 @@ js/audio.js       WebAudio ambience, music and sound effects
 js/art.js         Phase 1 artwork as hand-built SVG (scenes, characters, items)
 js/art2.js        Phase 2 artwork (junkyard, Vex, woods edge, roof, new items)
 js/art3.js        Phase 3 artwork (deep woods, glade, old wreck, Pip, new items)
+js/art4.js        Phase 4 artwork (canyon rim, Gilded Gull, STEWARD-9, new items)
 js/data.js        Phase 1 items, dialogue trees, banter, shop listings, jobs
 js/data2.js       Phase 2 items, dialogue (Vex, test-fire, roof), listings, jobs
 js/data3.js       Phase 3 items, dialogue (the wreck, Vex and Racket, the patch), listings
-js/minigames.js   bolt sorting, tune-up, wires, breakers, gasket, fireflies, star map, root maze
+js/data4.js       Phase 4 items, dialogue (the canyon, STEWARD-9, the hidden plate), listings
+js/minigames.js   bolt sorting, tune-up, wires, breakers, gasket, fireflies, star map, root maze, knots, moss, rivets, conveyor
 js/cafe.js        the Garage Café: coffee cart art, drink-making game, Racket and Vex reactions
 js/engine.js      state, scenes and hotspots, walking, dialogue runner, modals, saving
 ```
@@ -89,5 +102,5 @@ js/engine.js      state, scenes and hotspots, walking, dialogue runner, modals, 
 
 ## Roadmap
 
-- **Next:** hull plating (something big crashed in the canyon) and the engine core, which is making a new noise.
-- **Later:** the abandoned station on the ridge, and whatever happens when the Dandelion can fly again.
+- **Next:** the engine core (KA-THUNK, whirr, CLANK) and the blinking light on the ridge.
+- **The finale:** what happens when the Dandelion can fly again. Does Crystal leave, stay, or take Racket with her? That one is still the author's call.

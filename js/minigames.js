@@ -441,5 +441,191 @@ const Mini = (() => {
     draw('Springs, nuts, washers and bolts. Tap one, then its bin.');
   }
 
-  return { bolts: boltsAll, tune, wires, breakers, gasket, fireflies, starmap, roots };
+  // ---------------------------------------------------------------- rope knots (Vex shows a sequence, you repeat it)
+  function knots(onWin) {
+    const MOVES = [{ id: 'over', label: 'Over', icon: '⤴' }, { id: 'under', label: 'Under', icon: '⤵' }, { id: 'loop', label: 'Loop', icon: '➰' }, { id: 'pull', label: 'Pull', icon: '⇥' }];
+    const LEN = [3, 4, 5];
+    let round = 0, seq = [], input = [], showing = false;
+    G.ui.modal('Rope Knots', `<div class="knots">
+      <div class="knot-vex">${Art2.vexPortrait('smug')}<p id="kn-msg">Watch my claws, kid. Then do it back. Magpies are excellent at knots.</p></div>
+      <div class="knot-rope" id="kn-rope"></div>
+      <div class="knot-pad">${MOVES.map((m) => `<button class="knot-btn" data-k="${m.id}"><span>${m.icon}</span>${m.label}</button>`).join('')}</div>
+      <div class="pips">${LEN.map(() => '<i></i>').join('')}</div></div>`, { cls: 'knot-modal' });
+    const msg = (t) => { const el = $('#kn-msg'); if (el) el.textContent = t; };
+    const rope = () => { const el = $('#kn-rope'); if (el) el.innerHTML = input.map((k) => `<span>${MOVES.find((m) => m.id === k).icon}</span>`).join('') + '<i></i>'; };
+    const flash = (id) => { const b = $(`.knot-btn[data-k="${id}"]`); if (!b) return; b.classList.add('lit'); Sound.sfx('blipV'); setTimeout(() => b && b.classList.remove('lit'), 380); };
+    const play = () => {
+      showing = true; input = []; rope();
+      $$('.knot-btn').forEach((b) => (b.disabled = true));
+      msg(round === 0 ? 'Watch my claws, kid. Then do it back.' : pickOne(['Longer one. Keep up.', "Don't blink. I'm fast.", 'This is the one that holds a whole bridge. No pressure.']));
+      seq.forEach((k, i) => setTimeout(() => flash(k), 700 + i * 560));
+      setTimeout(() => { showing = false; $$('.knot-btn').forEach((b) => (b.disabled = false)); msg('Your turn.'); }, 700 + seq.length * 560);
+    };
+    const newRound = () => { seq = Array.from({ length: LEN[round] }, () => MOVES[Math.random() * 4 | 0].id); Mini._knotSeq = seq; play(); };
+    $$('.knot-btn').forEach((b) => b.addEventListener('click', () => {
+      if (showing || round >= LEN.length) return;
+      const k = b.dataset.k;
+      flash(k);
+      input.push(k); rope();
+      if (seq[input.length - 1] !== k) {
+        Sound.sfx('error');
+        showing = true;
+        msg(pickOne(['That\'s a granny knot. Again.', 'Nope. The bridge would drop you in the canyon. Watch again.', 'Close! Close is how people fall off bridges. Again.']));
+        setTimeout(play, 1200);
+        return;
+      }
+      if (input.length === seq.length) {
+        Sound.sfx('clank');
+        $$('.pips i')[round].classList.add('on');
+        round++;
+        if (round >= LEN.length) { msg('Ha! That\'ll hold a truck. Nice work, kid.'); win(onWin, 1000); return; }
+        msg(pickOne(['Good. Tight. Next one.', 'Not bad for a cat.']));
+        setTimeout(newRound, 1100);
+      }
+    }));
+    newRound();
+  }
+
+  // ---------------------------------------------------------------- moss grooming (tap the loose, glowing tufts)
+  function moss(onWin) {
+    const NEED = 10, N = 12;
+    let got = 0, grumbles = 0, alive = true;
+    const loose = new Set();
+    G.ui.modal('Moss Grooming', `<div class="mossgame">
+      <p class="bolt-msg" id="ms-msg">Gently brush off the glowing, loose tufts. Don't poke the sleepy bits.</p>
+      <div class="moss-back">${Array.from({ length: N }, (_, i) => `<button class="tuft" data-t="${i}" aria-label="moss tuft"></button>`).join('')}<div class="moss-face">ᵕ ᵕ<span id="ms-z">z z</span></div></div>
+      <div class="stir-bar"><i id="ms-bar" style="width:0%"></i></div></div>`, { cls: 'moss-modal' });
+    const tick = () => {
+      if (!alive || !$('.moss-back')) { alive = false; return; }
+      const free = [...Array(N).keys()].filter((i) => !loose.has(i));
+      const i = free[Math.random() * free.length | 0];
+      if (i != null && loose.size < 3) {
+        loose.add(i); const b = $(`.tuft[data-t="${i}"]`); b && b.classList.add('loose');
+        setTimeout(() => { loose.delete(i); const bb = $(`.tuft[data-t="${i}"]`); bb && bb.classList.remove('loose'); }, 1500);
+      }
+      setTimeout(tick, 520);
+    };
+    $$('.tuft').forEach((b) => b.addEventListener('click', () => {
+      if (!alive) return;
+      const i = +b.dataset.t;
+      if (loose.has(i)) {
+        loose.delete(i); b.classList.remove('loose'); b.classList.add('brushed'); setTimeout(() => b.classList.remove('brushed'), 400);
+        got++; Sound.sfx('sparkle');
+        $('#ms-bar').style.width = got / NEED * 100 + '%';
+        $('#ms-msg').textContent = got >= NEED ? 'A soft heap of glowing moss! The mossback sighs happily in its sleep.' : pickOne(['Gentle... got it.', 'The mossback purrs. Mossbacks purr?', 'Fluffy.']);
+        if (got >= NEED) { alive = false; win(onWin, 1100); }
+      } else {
+        grumbles++; Sound.sfx('error');
+        $('#ms-msg').textContent = grumbles % 3 === 0 ? 'The mossback rolls over with a huge grumble. You lose a tuft. Gentler!' : pickOne(['Hrrmmm. It grumbles in its sleep.', "That bit's still attached. It twitches.", 'An eye opens. ...And closes. Phew.']);
+        if (grumbles % 3 === 0 && got > 0) { got--; $('#ms-bar').style.width = got / NEED * 100 + '%'; }
+      }
+    }));
+    setTimeout(tick, 400);
+  }
+
+  // ---------------------------------------------------------------- rivet rhythm
+  function rivets(onWin) {
+    const TOTAL = 16, NEED = 12, SPB = .55, TRAVEL = 1.8;
+    const times = Array.from({ length: TOTAL }, (_, i) => 1.2 + i * SPB + (i % 4 === 3 ? SPB * .5 : 0));
+    let hit = 0, miss = 0, done = new Set(), t0 = 0, raf = 0, over = false;
+    G.ui.modal('Rivet Rhythm', `<div class="rivetgame">
+      <p class="bolt-msg" id="rv-msg">Tap RIVET as each rivet lands on the line. Get ${NEED} of ${TOTAL} to seal the plates.</p>
+      <div class="rv-plate"><div class="rv-holes">${Array.from({ length: TOTAL }, (_, i) => `<i data-h="${i}"></i>`).join('')}</div></div>
+      <div class="rv-track" id="rv-track"><div class="rv-line"></div></div>
+      <div class="brow"><span class="muted" id="rv-score">0 / ${NEED}</span><button class="btn big" id="rv-go">RIVET!</button></div></div>`, { cls: 'rivet-modal' });
+    const track = $('#rv-track');
+    times.forEach((_, i) => { const d = document.createElement('b'); d.className = 'rv-note'; d.dataset.n = i; track.appendChild(d); });
+    const score = () => { $('#rv-score').textContent = `${hit} / ${NEED}`; };
+    const finish = () => {
+      over = true; cancelAnimationFrame(raf);
+      if (hit >= NEED) { $('#rv-msg').textContent = 'BAM BAM BAM. Every plate riveted tight. Racket is nodding along to the rhythm.'; win(onWin, 1100); }
+      else {
+        $('#rv-msg').textContent = `Only ${hit}. Racket: "Wobbly. Let's do that again. I'll count you in."`;
+        setTimeout(() => { if ($('#rv-track')) { G.ui.closeModal(); setTimeout(() => rivets(onWin), 300); } }, 1600);
+      }
+    };
+    const frame = (now) => {
+      if (!$('#rv-track')) return;
+      if (!t0) t0 = now;
+      const t = (now - t0) / 1000;
+      $$('.rv-note', track).forEach((d) => {
+        const i = +d.dataset.n, dt = times[i] - t;
+        const x = 12 + (dt / TRAVEL) * 80;
+        d.style.left = x + '%';
+        d.style.display = done.has(i) || dt > TRAVEL || dt < -.35 ? 'none' : 'block';
+        if (dt < -.25 && !done.has(i)) { done.add(i); miss++; }
+      });
+      if (t > times[TOTAL - 1] + .6 && !over) { finish(); return; }
+      raf = requestAnimationFrame(frame);
+    };
+    raf = requestAnimationFrame(frame);
+    const go = () => {
+      if (over || !t0) return;
+      const t = (performance.now() - t0) / 1000;
+      let best = -1, bd = 9;
+      times.forEach((tt, i) => { if (!done.has(i) && Math.abs(tt - t) < bd) { bd = Math.abs(tt - t); best = i; } });
+      if (best >= 0 && bd < .2) {
+        done.add(best); hit++; Sound.sfx('clank');
+        const h = $(`.rv-holes i[data-h="${hit - 1}"]`); h && h.classList.add('on');
+        score();
+      } else { Sound.sfx('click'); }
+    };
+    $('#rv-go').addEventListener('click', go);
+    $('.rv-plate').addEventListener('click', go);
+  }
+
+  // ---------------------------------------------------------------- Bolt Bin IV: the conveyor
+  function conveyor(onWin) {
+    const kinds = shuffle(['S', 'S', 'L', 'L', 'N', 'N', 'W', 'W', 'P', 'P', 'S', 'N']);
+    const bins = [{ id: 'S', label: 'Small' }, { id: 'L', label: 'Large' }, { id: 'N', label: 'Nuts' }, { id: 'W', label: 'Washers' }, { id: 'P', label: 'Springs' }];
+    const spring = `<svg viewBox="-30 -30 60 90" aria-hidden="true"><path d="M-12,-14 L12,-8 L-12,-2 L12,4 L-12,10 L12,16 L-12,22 L12,28 L-12,34 L12,40" stroke="#c9d0d6" stroke-width="4" fill="none" stroke-linecap="round"/></svg>`;
+    const art = (k) => (k === 'sock' ? Art.sock : k === 'N' ? Art2.nut : k === 'W' ? Art2.washer : k === 'P' ? spring : Art.bolt(k));
+    const queue = [...kinds]; queue.splice(4, 0, 'sock'); queue.splice(9, 0, 'sock');
+    const belt = []; let sel = null, sorted = 0, raf = 0, last = performance.now(), spawnT = 0, alive = true, id = 0;
+    G.ui.modal('Bolt Bin IV: The Conveyor', `<div class="convgame">
+      <p class="bolt-msg" id="cv-msg">Racket built a conveyor belt. Of course he did. Grab things off the belt and drop them in the right bin before they fall off the end.</p>
+      <div class="belt" id="cv-belt"><div class="belt-stripes"></div></div>
+      <div class="bins b5">${bins.map((b) => `<button class="bin" data-bin="${b.id}"><span class="bin-label">${b.label}</span></button>`).join('')}</div>
+      <div class="brow"><span class="muted" id="cv-count">Sorted 0 / ${kinds.length}</span></div></div>`, { cls: 'bolt-modal' });
+    const beltEl = $('#cv-belt');
+    const add = (k) => {
+      const el = document.createElement('button');
+      el.className = 'cv-item'; el.innerHTML = art(k); el.setAttribute('aria-label', k);
+      const it = { id: id++, k, x: -8, el };
+      el.addEventListener('click', () => {
+        if (k === 'sock') { Sound.sfx('error'); $('#cv-msg').textContent = 'Racket: "Let the socks ride. They\'re on a journey."'; return; }
+        sel = it; $$('.cv-item', beltEl).forEach((e) => e.classList.remove('sel')); el.classList.add('sel'); Sound.sfx('click');
+      });
+      beltEl.appendChild(el); belt.push(it);
+    };
+    $$('[data-bin]').forEach((b) => b.addEventListener('click', () => {
+      if (!sel || !alive) { $('#cv-msg').textContent = 'Grab something off the belt first.'; return; }
+      if (sel.k === b.dataset.bin) {
+        Sound.sfx(sel.k === 'P' ? 'spark' : 'clank'); sorted++;
+        sel.el.remove(); belt.splice(belt.indexOf(sel), 1); sel = null;
+        $('#cv-count').textContent = `Sorted ${sorted} / ${kinds.length}`;
+        if (sorted >= kinds.length) { alive = false; cancelAnimationFrame(raf); $('#cv-msg').textContent = 'Belt clear! Racket: "Efficient. Terrifyingly efficient."'; win(onWin, 1000); }
+      } else { Sound.sfx('error'); $('#cv-msg').textContent = WRONG[sel.k] || 'Wrong bin.'; }
+    }));
+    const frame = (now) => {
+      if (!alive || !$('#cv-belt')) return;
+      const dt = Math.min(.05, (now - last) / 1000); last = now;
+      spawnT -= dt;
+      if (spawnT <= 0 && queue.length && belt.length < 5) { add(queue.shift()); spawnT = 1.6; }
+      belt.slice().forEach((it) => {
+        it.x += dt * 15;
+        it.el.style.left = it.x + '%';
+        if (it.x > 100) {
+          it.el.remove(); belt.splice(belt.indexOf(it), 1);
+          if (it === sel) sel = null;
+          if (it.k !== 'sock') { queue.push(it.k); $('#cv-msg').textContent = pickOne(['Plink. It fell off the end. It\'ll come round again.', 'Racket: "It\'s fine. The belt loops. Like my life."']); }
+          else queue.push('sock');
+        }
+      });
+      raf = requestAnimationFrame(frame);
+    };
+    raf = requestAnimationFrame(frame);
+  }
+
+  return { bolts: (r, cb) => (r === 4 ? conveyor(cb) : boltsAll(r, cb)), tune, wires, breakers, gasket, fireflies, starmap, roots, knots, moss, rivets };
 })();
