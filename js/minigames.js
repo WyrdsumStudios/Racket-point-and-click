@@ -630,7 +630,7 @@ const Mini = (() => {
   // ---------------------------------------------------------------- core balance: keep three bars in the band
   function coreBalance(onWin) {
     const BARS = [{ id: 'heat', name: 'Heat', c: '#ff8a5a' }, { id: 'flux', name: 'Flux', c: '#9fd8ff' }, { id: 'press', name: 'Pressure', c: '#9fffd0' }];
-    const vals = [50, 50, 50], drift = [0, 0, 0], BAND = [38, 62];
+    const vals = [50, 50, 50], drift = [0, 0, 0], BAND = [28, 72];
     let prog = 0, raf = 0, last = performance.now(), alive = true, t = 0;
     G.ui.modal('Core Balance', `<div class="coregame">
       <p class="bolt-msg" id="cb-msg">The core is spinning up. Keep all three bars inside the green band while the spin gauge fills.</p>
@@ -645,14 +645,14 @@ const Mini = (() => {
     const frame = (now) => {
       if (!alive || !$('.cb-bars')) return;
       const dt = Math.min(.05, (now - last) / 1000); last = now; t += dt;
-      const speed = 1 + Math.min(1.4, prog / 60);
+      const speed = 1 + Math.min(.4, prog / 250);
       for (let i = 0; i < 3; i++) {
-        drift[i] += (Math.random() - .5) * 40 * dt;
-        drift[i] = Math.max(-14, Math.min(14, drift[i]));
-        vals[i] = Math.max(0, Math.min(100, vals[i] + drift[i] * dt * 2.2 * speed + Math.sin(t * (1.1 + i * .4)) * dt * 6));
+        drift[i] += (Math.random() - .5) * 20 * dt;
+        drift[i] = Math.max(-7, Math.min(7, drift[i]));
+        vals[i] = Math.max(0, Math.min(100, vals[i] + drift[i] * dt * 1.1 * speed + Math.sin(t * (.6 + i * .25)) * dt * 2.5));
       }
       const ok = vals.every((v) => v >= BAND[0] && v <= BAND[1]);
-      prog = Math.max(0, Math.min(100, prog + (ok ? 9 : -6) * dt));
+      prog = Math.max(0, Math.min(100, prog + (ok ? 12 : -2.5) * dt));
       $$('.cb-bar b').forEach((b, i) => { b.style.bottom = vals[i] + '%'; b.parentElement.classList.toggle('out', vals[i] < BAND[0] || vals[i] > BAND[1]); });
       $('#cb-prog').style.width = prog + '%';
       if (prog >= 100) { alive = false; $('#cb-msg').textContent = 'The core settles into a smooth, steady hum. No KA-THUNK. Racket lets out a breath he has been holding for twenty years.'; win(onWin, 1400); return; }

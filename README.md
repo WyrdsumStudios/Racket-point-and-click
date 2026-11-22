@@ -108,6 +108,7 @@ js/data3.js       Phase 3 items, dialogue (the wreck, Vex and Racket, the patch)
 js/data4.js       Phase 4 items, dialogue (the canyon, STEWARD-9, the hidden plate), listings
 js/data5.js       Phase 5 items, dialogue (the core, the roof talk, the crate, the flight, three endings)
 js/minigames.js   bolt sorting, tune-up, wires, breakers, gasket, fireflies, star map, root maze, knots, moss, rivets, conveyor, core balance, forms, launch checklist
+js/racket-more.js extra backstory and hang-out moments for Racket
 js/cafe.js        the Garage Café: drink-making game, reactions, and the finale's Café Rush
 js/engine.js      state, scenes and hotspots, walking, dialogue runner, modals, saving
 ```

@@ -722,7 +722,7 @@ button.slot:hover { border-color: #4a7d6d; }
 .cb-col { display: grid; gap: 6px; justify-items: center; font-weight: 800; color: #cfe; }
 .cb-bar { position: relative; width: 56px; height: 200px; border-radius: 14px; background: #0f1916; border: 2px solid #2a3d36; overflow: hidden; transition: border-color .15s; }
 .cb-bar.out { border-color: #e0614f; box-shadow: 0 0 12px rgba(224,97,79,.5); }
-.cb-bar .band { position: absolute; left: 0; right: 0; bottom: 38%; height: 24%; background: rgba(79,224,138,.22); border-top: 2px solid #4fe08a; border-bottom: 2px solid #4fe08a; }
+.cb-bar .band { position: absolute; left: 0; right: 0; bottom: 28%; height: 44%; background: rgba(79,224,138,.22); border-top: 2px solid #4fe08a; border-bottom: 2px solid #4fe08a; }
 .cb-bar b { position: absolute; left: 6px; right: 6px; height: 12px; margin-bottom: -6px; border-radius: 6px; box-shadow: 0 0 12px currentColor; }
 .cb-btns { display: flex; gap: 6px; }
 .cb-btns .btn { padding: 8px 14px; font-size: 16px; }
