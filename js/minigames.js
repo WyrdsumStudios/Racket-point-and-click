@@ -627,5 +627,139 @@ const Mini = (() => {
     raf = requestAnimationFrame(frame);
   }
 
-  return { bolts: (r, cb) => (r === 4 ? conveyor(cb) : boltsAll(r, cb)), tune, wires, breakers, gasket, fireflies, starmap, roots, knots, moss, rivets };
+  // ---------------------------------------------------------------- core balance: keep three bars in the band
+  function coreBalance(onWin) {
+    const BARS = [{ id: 'heat', name: 'Heat', c: '#ff8a5a' }, { id: 'flux', name: 'Flux', c: '#9fd8ff' }, { id: 'press', name: 'Pressure', c: '#9fffd0' }];
+    const vals = [50, 50, 50], drift = [0, 0, 0], BAND = [38, 62];
+    let prog = 0, raf = 0, last = performance.now(), alive = true, t = 0;
+    G.ui.modal('Core Balance', `<div class="coregame">
+      <p class="bolt-msg" id="cb-msg">The core is spinning up. Keep all three bars inside the green band while the spin gauge fills.</p>
+      <div class="cb-bars">${BARS.map((b, i) => `<div class="cb-col"><div class="cb-bar"><i class="band"></i><b style="background:${b.c}"></b></div><span>${b.name}</span>
+        <div class="cb-btns"><button class="btn" data-i="${i}" data-d="1" aria-label="raise ${b.name}">▲</button><button class="btn" data-i="${i}" data-d="-1" aria-label="lower ${b.name}">▼</button></div></div>`).join('')}</div>
+      <div class="cb-spin"><span>Spin</span><div class="stir-bar"><i id="cb-prog" style="width:0%"></i></div></div></div>`, { cls: 'core-modal' });
+    $$('[data-i]').forEach((btn) => btn.addEventListener('click', () => {
+      const i = +btn.dataset.i;
+      vals[i] = Math.max(0, Math.min(100, vals[i] + 9 * +btn.dataset.d));
+      Sound.sfx('click');
+    }));
+    const frame = (now) => {
+      if (!alive || !$('.cb-bars')) return;
+      const dt = Math.min(.05, (now - last) / 1000); last = now; t += dt;
+      const speed = 1 + Math.min(1.4, prog / 60);
+      for (let i = 0; i < 3; i++) {
+        drift[i] += (Math.random() - .5) * 40 * dt;
+        drift[i] = Math.max(-14, Math.min(14, drift[i]));
+        vals[i] = Math.max(0, Math.min(100, vals[i] + drift[i] * dt * 2.2 * speed + Math.sin(t * (1.1 + i * .4)) * dt * 6));
+      }
+      const ok = vals.every((v) => v >= BAND[0] && v <= BAND[1]);
+      prog = Math.max(0, Math.min(100, prog + (ok ? 9 : -6) * dt));
+      $$('.cb-bar b').forEach((b, i) => { b.style.bottom = vals[i] + '%'; b.parentElement.classList.toggle('out', vals[i] < BAND[0] || vals[i] > BAND[1]); });
+      $('#cb-prog').style.width = prog + '%';
+      if (prog >= 100) { alive = false; $('#cb-msg').textContent = 'The core settles into a smooth, steady hum. No KA-THUNK. Racket lets out a breath he has been holding for twenty years.'; win(onWin, 1400); return; }
+      raf = requestAnimationFrame(frame);
+    };
+    raf = requestAnimationFrame(frame);
+  }
+
+  // ---------------------------------------------------------------- form in triplicate (STEWARD-9's paperwork)
+  function forms(onWin) {
+    const FIELDS = [
+      { id: 'name', label: 'Name', opts: ['Crystal Lynx', 'CRYSTAL LYNX', 'C. Lynx'] },
+      { id: 'ship', label: 'Vessel', opts: ['The Dandelion', 'DANDELION (scout)', 'Dandelion'] },
+      { id: 'date', label: 'Date', opts: ['3rd moonrise', 'Tuesday?', '40 years late'] },
+      { id: 'init', label: 'Initials', opts: ['CL in box A', 'CL in box B', 'RKT in box A'] },
+    ];
+    const COPIES = [
+      { id: 'white', name: 'White copy', want: ['Crystal Lynx', 'The Dandelion', '3rd moonrise', 'CL in box A'], rules: 'Full name as spoken. Vessel with its article. Today\'s date. Initial box A.' },
+      { id: 'yellow', name: 'Yellow copy', want: ['CRYSTAL LYNX', 'DANDELION (scout)', '3rd moonrise', 'CL in box B'], rules: 'Yellow copies are SHOUTED: name in capitals, vessel with its class. Today\'s date. Yellow copies are initialled in box B, naturally.' },
+      { id: 'pink', name: 'Pink copy', want: ['C. Lynx', 'Dandelion', '40 years late', 'RKT in box A'], rules: 'The pink copy is abbreviated: initial and surname, bare vessel name. Backdated to the Gilded Gull\'s departure. Requires the MECHANIC\'s initials.' },
+    ];
+    const COMPLAINT = {
+      name: ['I am afraid that is not how one writes a name on a {c}, madam.', 'The name field is... creative. Regrettably, creativity is not permitted.'],
+      ship: ['The vessel name is incorrectly formatted for a {c}.', 'Is that a ship or a mood? Please consult the rules on the {c}.'],
+      date: ['That date is not valid on a {c}. Time is very important to me. I have had a lot of it.', 'Ah. The {c} is particular about dates.'],
+      init: ['You have initialled the wrong initial.', 'Those initials are in the wrong box. Or are the wrong initials. Possibly both. It is very upsetting.'],
+    };
+    const state = COPIES.map(() => FIELDS.map(() => 0));
+    let tab = 0, tries = 0;
+    G.ui.modal('Form 27-B/6, in Triplicate', '<div class="formgame"></div>', { cls: 'form-modal' });
+    const draw = (msg) => {
+      const el = $('#modal .formgame');
+      if (!el) return;
+      const c = COPIES[tab];
+      el.innerHTML = `<div class="knot-vex steward-say">${Art4.stewardPortrait(msg && msg.bad ? 'alarm' : 'polite')}<p>${esc(msg ? msg.t : 'Request for Release of Ship\'s Property. In triplicate, please. Each copy has its own small rules. Tap a field to change it.')}</p></div>
+        <div class="form-tabs">${COPIES.map((cc, i) => `<button class="form-tab ${cc.id} ${i === tab ? 'on' : ''}" data-tab="${i}">${cc.name}</button>`).join('')}</div>
+        <div class="form-sheet ${c.id}">
+          <div class="form-head">GILDED GULL LINES · FORM 27-B/6 · ${c.name.toUpperCase()}</div>
+          <p class="form-rules">${esc(c.rules)}</p>
+          ${FIELDS.map((f, i) => `<button class="form-field" data-f="${i}"><span>${f.label}</span><b>${esc(f.opts[state[tab][i]])}</b><i>tap to change</i></button>`).join('')}
+        </div>
+        <div class="brow"><span class="muted">Submissions: ${tries}</span><button class="btn big" id="form-submit">Submit all three copies</button></div>`;
+      $$('[data-tab]', el).forEach((b) => b.addEventListener('click', () => { tab = +b.dataset.tab; Sound.sfx('click'); draw(msg); }));
+      $$('[data-f]', el).forEach((b) => b.addEventListener('click', () => { const i = +b.dataset.f; state[tab][i] = (state[tab][i] + 1) % 3; Sound.sfx('click'); draw(msg); }));
+      $('#form-submit', el).addEventListener('click', () => {
+        tries++;
+        for (let ci = 0; ci < COPIES.length; ci++) {
+          for (let fi = 0; fi < FIELDS.length; fi++) {
+            if (FIELDS[fi].opts[state[ci][fi]] !== COPIES[ci].want[fi]) {
+              Sound.sfx('error'); tab = ci;
+              draw({ bad: true, t: pickOne(COMPLAINT[FIELDS[fi].id]).replace('{c}', COPIES[ci].name.toLowerCase()) });
+              return;
+            }
+          }
+        }
+        Sound.sfx('success');
+        draw({ t: 'Stamped, stamped and stamped. This is the most beautiful paperwork I have seen in forty years. One flux coil, released.' });
+        win(onWin, 1400);
+      });
+    };
+    draw();
+  }
+
+  // ---------------------------------------------------------------- launch checklist: call and response
+  function checklist(onWin) {
+    const SW = [
+      { id: 'fuel', label: 'Fuel pump', icon: '⛽' }, { id: 'core', label: 'Core feed', icon: '◎' }, { id: 'thr', label: 'Thrusters', icon: '⇶' },
+      { id: 'nav', label: 'Nav', icon: '✦' }, { id: 'hull', label: 'Hull seal', icon: '▣' }, { id: 'radio', label: 'Radio', icon: '📻' },
+      { id: 'lights', label: 'Lights', icon: '☀' }, { id: 'rail', label: 'Rail clamps', icon: '⫶' }, { id: 'snack', label: 'Snack drawer', icon: '🍜' },
+    ];
+    const CALLS = [['fuel', 'Fuel pump!'], ['core', 'Core feed!'], ['hull', 'Hull seal!'], ['nav', 'Nav... nav online!'], ['thr', 'Thrusters to standby!'], ['radio', "Radio! Somebody tell Vex we're doing this!"], ['snack', '...Snack drawer. Don\'t look at me like that. It\'s on the list.'], ['rail', 'Rail clamps! Release!']];
+    let step = 0, timer = 0, raf = 0, t0 = 0, alive = true;
+    const LIMIT = 5;
+    G.ui.modal('Launch Checklist', `<div class="checkgame">
+      <div class="knot-vex racket-say">${Art.portrait('r', 'soft')}<p id="lc-call">Okay. Okay. I call it, you flip it. My hands are... it's fine. You flip it.</p></div>
+      <div class="stir-bar"><i id="lc-time" style="width:100%"></i></div>
+      <div class="lc-pad">${SW.map((s) => `<button class="lc-sw" data-s="${s.id}"><span>${s.icon}</span>${s.label}<i></i></button>`).join('')}</div>
+      <div class="pips">${CALLS.map(() => '<i></i>').join('')}</div></div>`, { cls: 'check-modal' });
+    const call = () => {
+      if (!$('#lc-call')) return;
+      $('#lc-call').textContent = `Racket: "${CALLS[step][1]}"`;
+      Sound.sfx('blipR'); t0 = performance.now();
+    };
+    const frame = (now) => {
+      if (!alive || !$('#lc-time')) return;
+      const left = Math.max(0, 1 - (now - t0) / 1000 / LIMIT);
+      $('#lc-time').style.width = left * 100 + '%';
+      if (left <= 0) { $('#lc-call').textContent = `Racket: "...${CALLS[step][1]}" (He says it again, quieter. His paw is shaking.)`; t0 = performance.now(); }
+      raf = requestAnimationFrame(frame);
+    };
+    $$('.lc-sw').forEach((b) => b.addEventListener('click', () => {
+      if (!alive) return;
+      if (b.dataset.s === CALLS[step][0]) {
+        Sound.sfx('clank'); b.classList.add('on');
+        $$('.pips i')[step].classList.add('on');
+        step++;
+        if (step >= CALLS.length) {
+          alive = false; cancelAnimationFrame(raf);
+          $('#lc-call').textContent = 'Racket: "...Check. All check." He looks at you. "Ignition, lynx. Together."';
+          win(onWin, 1600); return;
+        }
+        $('#lc-call').textContent = pickOne(['Racket: "Check."', 'Crystal: "Check!"', 'Racket: "...Check. Good."']);
+        setTimeout(call, 700);
+      } else { Sound.sfx('error'); $('#lc-call').textContent = pickOne(['Racket: "Not that one! ...Sorry. Not that one."', 'Racket: "That\'s the lights. We need the lights eventually. Not now."', 'Racket: "Breathe. I\'m saying that to me. You breathe too."']); }
+    }));
+    setTimeout(() => { call(); raf = requestAnimationFrame(frame); }, 1600);
+  }
+
+  return { coreBalance, forms, checklist, bolts: (r, cb) => (r === 4 ? conveyor(cb) : boltsAll(r, cb)), tune, wires, breakers, gasket, fireflies, starmap, roots, knots, moss, rivets };
 })();

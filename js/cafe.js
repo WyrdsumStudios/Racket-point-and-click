@@ -374,5 +374,74 @@ const Cafe = (() => {
   // a gentle nudge in Racket's idle banter once the café is open
   if (DATA.idle2) DATA.idle2.forEach((pool) => pool.push('*glances at the coffee corner. Then at you. Then back at the coffee corner.*'));
 
-  return { open, cartArt, RECIPES };
+  // ------------------------------------------------------------------ Café Rush (finale edition)
+  const RUSH = [
+    { who: 'Racket', pic: () => Art.portrait('r', 'laugh'), order: 'The French Vanilla Monstrosity. "Regular coffee. For adults."', want: { base: 'coffee', milk: 'none', adds: ['fv', 'og', 'hz'], top: 'none' }, ok: '"...Perfect. Don\'t tell anyone. Everyone already knows. Don\'t tell them anyway."', bad: '"That\'s not the Monstrosity. That\'s a Monstrosity. Different thing."' },
+    { who: 'Vex', pic: () => Art2.vexPortrait('delight'), order: 'Anything. With. SPRINKLES.', want: { base: '*', milk: '*', adds: '*', top: 'sprinkles' }, ok: '"SHINY! Kid, I\'d hug you, but I already used up my hug for the decade."', bad: '"Where are the SPRINKLES? I\'m being punished."' },
+    { who: 'STEWARD-9', pic: () => Art4.stewardPortrait('happy'), order: 'Oil, lightly frothed. "If it is no trouble."', want: { base: 'oil', milk: 'froth', adds: [], top: 'none' }, ok: '"Exquisite. Notes of gearbox and a hint of 1978. Thank you, Ms. Lynx."', bad: '"How... interesting. I shall drink it out of politeness. I do not drink."' },
+    { who: 'Pip', pic: () => `<svg viewBox="-50 -50 100 100" aria-hidden="true">${Art3.pip(true)}</svg>`, order: 'Just the whipped cream. Pip is small. No coffee for Pip.', want: { base: 'none', milk: 'none', adds: [], top: 'whip' }, ok: 'Pip dives face-first into the whipped cream and emerges a very happy cloud.', bad: 'Pip looks at the cup. Pip looks at you. Pip is disappointed but forgiving.' },
+    { who: 'The mossback', pic: () => '<svg viewBox="70 580 300 180" aria-hidden="true">' + Art3.deep.mossback() + '</svg>', order: 'One cocoa. Bucket-sized. With marshmallows. (It followed Pip up the hill.)', want: { base: 'cocoa', milk: 'steam', adds: [], top: 'mallow' }, ok: 'A deep, happy rumble. Several flowers on its back bloom at once.', bad: 'It drinks it anyway, sleepily. It is very forgiving. It is mostly asleep.' },
+    { who: 'Crystal (you!)', pic: () => Art.portrait('c', 'happy'), order: 'An Ember-Bark Spice Latte. You earned it.', want: { base: 'espresso', milk: 'steam', adds: ['ember'], top: 'cinnamon' }, ok: 'It tastes like the woods in autumn, and like the whole adventure.', bad: 'It\'s... fine. You\'re too happy to care.' },
+  ];
+  function rush(onDone) {
+    let i = 0, score = 0, timer = 0, t0 = 0;
+    const cur = { base: null, milk: null, adds: [], top: null };
+    const reset = () => { cur.base = null; cur.milk = null; cur.adds = []; cur.top = null; };
+    const row = (label, key, opts, multi) => `<div class="rush-row"><span>${label}</span><div>${opts.map(([v, n]) => `<button class="cafe-opt sm ${multi ? (cur.adds.includes(v) ? 'sel' : '') : cur[key] === v ? 'sel' : ''}" data-k="${key}" data-v="${v}">${esc(n)}</button>`).join('')}</div></div>`;
+    const draw = (msg) => {
+      const o = RUSH[i];
+      G.ui.modal('Café Rush: Celebration Order', `<div class="rush">
+        <div class="rush-top"><span>Order ${i + 1} of ${RUSH.length}</span><span>★ ${score}</span></div>
+        <div class="rush-ticket"><div class="pframe">${o.pic()}</div><div><b>${esc(o.who)}</b><p>${esc(o.order)}</p></div></div>
+        <div class="stir-bar"><i id="rush-time" style="width:100%"></i></div>
+        ${msg ? `<p class="cafe-reward">${esc(msg)}</p>` : ''}
+        ${row('Base', 'base', [['coffee', 'Coffee'], ['espresso', 'Espresso'], ['cocoa', 'Cocoa'], ['oil', 'Motor oil'], ['none', 'Nothing']])}
+        ${row('Milk', 'milk', [['steam', 'Steamed'], ['froth', 'Lightly frothed'], ['none', 'None']])}
+        ${row('Add', 'adds', Object.entries(ADDS).map(([k, a]) => [k, k === 'hazelnut' ? 'Hazelnut syrup' : a.name.replace(' creamer', ' cr.').replace(' syrup', '')]), true)}
+        ${row('Top', 'top', [['whip', 'Whipped cream'], ['mallow', 'Marshmallows'], ['cinnamon', 'Cinnamon'], ['sprinkles', 'Sprinkles'], ['none', 'Nothing']])}
+        <button class="btn big" id="rush-serve">Serve!</button></div>`, { cls: 'rush-modal' });
+      $$('[data-k]', $('#modal')).forEach((b) => b.addEventListener('click', () => {
+        const k = b.dataset.k, v = b.dataset.v;
+        if (k === 'adds') cur.adds = cur.adds.includes(v) ? cur.adds.filter((x) => x !== v) : [...cur.adds, v]; else cur[k] = v;
+        Sound.sfx('click'); draw(msg);
+      }));
+      $('#rush-serve').addEventListener('click', serve);
+      tick();
+    };
+    const tick = () => {
+      cancelAnimationFrame(timer);
+      const loop = (now) => {
+        const el = $('#rush-time'); if (!el) return;
+        el.style.width = Math.max(0, 1 - (now - t0) / 30000) * 100 + '%';
+        timer = requestAnimationFrame(loop);
+      };
+      timer = requestAnimationFrame(loop);
+    };
+    const serve = () => {
+      const o = RUSH[i], w = o.want;
+      const late = performance.now() - t0 > 30000;
+      const match = (k) => w[k] === '*' || (k === 'adds' ? [...w.adds].sort().join() === [...cur.adds].sort().join() : cur[k] === w[k] || (cur[k] == null && w[k] === 'none'));
+      const ok = ['base', 'milk', 'adds', 'top'].every(match);
+      if (ok) score += late ? 1 : 2;
+      Sound.sfx(ok ? 'success' : 'error');
+      const line = (ok ? o.ok : o.bad) + (ok && late ? ' (A little cold. Still loved.)' : '');
+      i++; reset();
+      if (i >= RUSH.length) {
+        cancelAnimationFrame(timer);
+        const stars = score >= 11 ? 3 : score >= 7 ? 2 : 1;
+        G.ui.modal('Café Rush: Celebration Order', `<div class="rush"><div class="rush-ticket"><div class="pframe">${o.pic()}</div><div><b>${esc(o.who)}</b><p>${esc(line)}</p></div></div>
+          <div class="cafe-stars">${'★'.repeat(stars)}${'☆'.repeat(3 - stars)}</div>
+          <p class="cafe-hint">${stars === 3 ? 'Everybody got exactly what they wanted. Even the mossback.' : 'A couple of mix-ups. Nobody minds. It is a party.'}</p>
+          <button class="btn big" id="rush-done">Back to the party</button></div>`, { cls: 'rush-modal' });
+        $('#rush-done').addEventListener('click', () => { G.ui.closeModal(); onDone && onDone(stars); });
+        return;
+      }
+      t0 = performance.now();
+      draw(line);
+    };
+    t0 = performance.now();
+    draw();
+  }
+
+  return { open, cartArt, RECIPES, rush };
 })();

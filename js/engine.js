@@ -15,11 +15,11 @@
   // ---------------------------------------------------------------------------
   const fresh = () => ({
     v: 2, scene: 'crash', inv: ['datapad'], flags: {}, friend: 0, credits: 0,
-    parts: { casing: false, crystal: false, wiring: false, nozzles: false, gasket: false, starcrystal: false, chip: false, plates: false, sealant: false },
-    repairs: { fuel: false, thrusters: false, nav: false, hull: false },
+    parts: { casing: false, crystal: false, wiring: false, nozzles: false, gasket: false, starcrystal: false, chip: false, plates: false, sealant: false, regulator: false, coil: false },
+    repairs: { fuel: false, thrusters: false, nav: false, hull: false, core: false },
     jobs: { radio: 'hidden', bolts: 'hidden', scrap: 'hidden', bolts2: 'hidden', tune: 'hidden', wires: 'hidden', bolts3: 'hidden', bolts4: 'hidden' },
     sold: [], talked: {}, piles: { tires: 0, appliances: 0, shiny: 0 }, cafe: { made: {}, monster: 0, vex: 0 },
-    pos: { crash: 560, garage: 820, junkyard: 300, woods: 1250, roof: 800, deep: 300, glade: 1250, wreck: 300, canyon: 300, gull: 300 }, station: 0, played: {},
+    pos: { crash: 560, garage: 820, junkyard: 300, woods: 1250, roof: 800, deep: 300, glade: 1250, wreck: 300, canyon: 300, gull: 300, yard: 420, hangar: 300 }, station: 0, played: {},
   });
   let S = fresh();
   let sel = null;            // selected inventory item
@@ -81,7 +81,7 @@
     addCredits(n) { S.credits += n; Sound.sfx('coin'); floatText(`+${n} cr`); updateHud(); save(); },
     introDone, finishRadio, returnItem, nightScene, phaseEnd,
     vexIntroDone, tradeHubcap, fireThrusters, roofScene,
-    board, plateMissingDone, plateFoundDone, giveWasher, wreckStoryDone, reconcileScene, reconcileDone, sporesDone, patchScene, wearPatch, dlg: (id) => dlg(id),
+    crateDone, roofTalkDone, startForms, startChecklist, afterFlight, ending, askCrate, board, plateMissingDone, plateFoundDone, giveWasher, wreckStoryDone, reconcileScene, reconcileDone, sporesDone, patchScene, wearPatch, dlg: (id) => dlg(id),
   };
   window.G = G;
 
@@ -93,19 +93,21 @@
   const mittsOnCouch = () => !S.flags.mittsTaken || S.flags.mittsReturned;
   const racketAtJunk = () => S.scene === 'junkyard' && !S.flags.racketLeftJunk;
   // Racket's spot: the bench normally, the couch during noodle night, by the crane on the first junkyard trip.
-  const rX = () => (S.scene === 'junkyard' ? 600 : S.scene === 'wreck' ? 1300 : S.flags.noodles && !S.flags.phase1 ? 150 : 1090);
-  const vexX = () => (S.scene === 'garage' ? 640 : S.scene === 'canyon' ? 470 : 1395);
+  const rX = () => (S.scene === 'junkyard' ? 600 : S.scene === 'wreck' ? 1300 : S.scene === 'yard' ? 820 : S.scene === 'hangar' ? 700 : S.flags.noodles && !S.flags.phase1 ? 150 : 1090);
+  const vexX = () => (S.scene === 'garage' ? 640 : S.scene === 'canyon' ? 470 : S.scene === 'hangar' ? 1290 : 1395);
   const STEWARD_X = 840;
   const VEX_X = 1395;
-  const BENCH_ITEMS = ['hull_plates', 'moss_sealant', 'rivet_gun', 'gold_rivets', 'cell_casing', 'charge_crystal', 'wiring', 'thruster_nozzles', 'gasket', 'copper_sheet', 'ember_resin', 'star_crystal', 'nav_chip', 'broken_scanner', 'resonance_coil'];
+  const BENCH_ITEMS = ['core_regulator', 'flux_coil', 'hull_plates', 'moss_sealant', 'rivet_gun', 'gold_rivets', 'cell_casing', 'charge_crystal', 'wiring', 'thruster_nozzles', 'gasket', 'copper_sheet', 'ember_resin', 'star_crystal', 'nav_chip', 'broken_scanner', 'resonance_coil'];
   const P3 = () => !!S.flags.phase2;
   const P4 = () => !!S.flags.phase3;
+  const P5 = () => !!S.flags.phase4;
+  const vexName = () => (S.flags.roofTalk ? 'featherhug_88' : 'scrapmonger_88');
 
   const SCENES = {
     garage: {
       name: "Racket's Garage", floor: 800, amb: 'garage',
-      bg: () => Art.garageBg(), fg: () => Art.garageFg(),
-      entry: [1440, 1310],
+      bg: () => Art.garageBg(), fg: () => Art.garageFg() + (F().ending ? Art5.endingDecor(F().ending) : ''),
+      entry: (from) => (from === 'yard' ? [60, 300] : [1440, 1310]),
       hs: [
         { id: 'window', label: 'Window', hit: [70, 140, 272, 148], walk: 240, draw: () => Art.garage.window(), act: actWindow },
         { id: 'radio', label: () => (F().radioFixed ? 'Radio' : 'Busted radio'), hit: [184, 250, 140, 94], walk: 250, accepts: ['spare_fuse'], draw: () => Art.garage.radio(F().radioFixed), act: actRadio },
@@ -120,9 +122,11 @@
         { id: 'bolts', label: 'Bolt bin', hit: [940, 428, 78, 64], walk: 940, draw: () => Art.garage.boltBin(S.jobs.bolts === 'done' && (!F().phase1 || S.jobs.bolts2 === 'done')), act: actBolts },
         { id: 'cafe', label: () => (F().phase1 ? 'Garage Café' : 'Coffee corner (broken)'), hit: [350, 340, 136, 200], walk: 420, draw: () => Cafe.cartArt(S), act: actCafe },
         { id: 'couch', label: () => (mittsOnCouch() && !F().crystalTaken ? 'Couch (oven mitts?)' : F().phase1 && !F().cupTaken ? 'Couch (noodle cups)' : 'Couch'), hit: [40, 550, 384, 180], walk: 250, draw: () => Art.garage.couch(S, mittsOnCouch()), act: actCouch },
-        { id: 'ship', label: 'The Dandelion', show: () => F().shipTowed, hit: [1186, 360, 394, 290], walk: 1290, draw: () => Art.garage.bayShip(S, G.tmp.testFire), act: () => openShip() },
+        { id: 'ship', label: 'The Dandelion', show: () => F().shipTowed && (!F().shipAtHangar || !!F().ending), hit: [1186, 360, 394, 290], walk: 1290, draw: () => Art.garage.bayShip(S, G.tmp.testFire), act: () => openShip() },
         { id: 'racket', label: 'Racket', hit: () => [rX() - 68, 250, 140, 550], walk: () => (rX() > 600 ? 945 : 330), anyItem: true, draw: () => `<g transform="translate(${rX()},800)">${Art.racket(G.tmp.testFire ? 'laugh' : G.rMood())}</g>`, act: actRacket },
         { id: 'hidplate', label: 'Something under the workbench', show: () => !!F().plateMissing && !F().plateFound && !!F().scannerFixed, hit: [830, 584, 120, 56], walk: 890, draw: () => Art4.hiddenPlate(), act: () => dlg('plateConfession') },
+        { id: 'ladder', label: 'Ladder to the roof', show: P5, hit: [14, 150, 96, 410], walk: 140, draw: () => Art5.ladder(), act: actLadder },
+        { id: 'backdoor', label: 'Out back (behind the garage)', show: P5, hit: [20, 740, 150, 110], walk: 110, draw: () => Art5.backDoor(), act: () => go('yard') },
         { id: 'vexG', label: 'Vex', show: () => !!G.tmp.vexVisit, hit: [580, 250, 130, 560], walk: 760, draw: () => `<g transform="translate(640,806) scale(-1,1)">${Art2.vex('neutral')}</g>`, act: () => say('v', "Don't mind me. Just standing in a tree house.") },
         { id: 'exit', label: 'To the crash site', hit: [1440, 740, 150, 110], walk: 1470, draw: () => Art.garage.exit(), act: () => go('crash') },
       ],
@@ -236,7 +240,7 @@
       bg: () => Art4.rimBg(S), fg: () => '',
       entry: (from) => (from === 'gull' ? [1440, 1250] : [60, 300]),
       hs: [
-        { id: 'truck', label: "Vex's truck", hit: [60, 500, 350, 190], walk: 300, draw: () => Art4.rim.truck(), act: actTruck },
+        { id: 'truck', label: "Vex's truck", hit: [60, 500, 350, 190], walk: 300, draw: () => Art4.rim.truck(F().roofTalk), act: actTruck },
         { id: 'arch', label: 'Stone arch', hit: [1260, 400, 220, 220], walk: 1300, act: () => say('c', 'The wind whistles through the arch. It sounds almost like the radio song. Racket would hate that I noticed.') },
         { id: 'bridge', label: () => (F().bridgeFixed ? 'Rope bridge (to the Gilded Gull)' : 'Broken rope bridge'), hit: [580, 520, 540, 180], walk: 560, draw: () => Art4.rim.bridge(F().bridgeFixed), act: actBridge },
         { id: 'vexC', label: 'Vex', hit: [404, 250, 130, 560], walk: 360, anyItem: true, draw: () => `<g transform="translate(470,806) scale(-1,1)">${Art2.vex(F().bridgeFixed ? 'smug' : 'neutral')}</g>`, act: (item) => { if (item) { say('v', DATA.giveVex[item] || "Not now, kid. Canyon first."); return; } G.tmp.vexAgain = false; dlg('vexCanyon'); } },
@@ -258,9 +262,38 @@
       ],
       onEnter() {},
     },
+    yard: {
+      name: 'Behind the Garage', floor: 812, amb: 'forest',
+      bg: () => Art5.yardBg(S), fg: () => '',
+      entry: (from) => (from === 'hangar' ? [1300, 1150] : [220, 420]),
+      hs: [
+        { id: 'door', label: 'Back door (into the garage)', hit: [104, 370, 132, 280], walk: 200, act: () => go('garage') },
+        { id: 'planters', label: 'Mushroom planters', hit: [30, 630, 180, 90], walk: 150, act: () => say('c', F().mushroomsPlanted ? "Little planters of his mom's mushrooms, started from the spore tin. He's been busy." : 'Little planters of red mushrooms. He grows them everywhere.') },
+        { id: 'laundry', label: 'Laundry line', hit: [770, 300, 320, 130], walk: 900, act: () => say('c', "Racket's spare coveralls, a red rag... and one single sock. Is that THE sock? It can't be. ...It might be.") },
+        { id: 'crate', label: () => (F().crateOpened ? "Racket's crate (open)" : 'Locked crate'), hit: [420, 560, 290, 180], walk: 360, draw: () => Art5.crate(!!F().crateOpened), act: actCrate },
+        { id: 'hill', label: 'Path up the hill (Old Hangar)', hit: [1110, 440, 180, 140], walk: 1150, draw: () => Art5.toHill(), act: () => go('hangar') },
+        { id: 'racketY', label: 'Racket', show: () => !!G.tmp.racketYard, hit: [752, 250, 140, 550], walk: 700, draw: () => `<g transform="translate(820,806)">${Art.racket('soft')}</g>`, act: () => {} },
+      ],
+      onEnter() { if (!F().yardSeen) { F().yardSeen = true; save(); setTimeout(() => say('c', "Behind the garage. Planters, a laundry line, a path up the hill into the fog... and a crate under a tarp."), 300); } },
+    },
+    hangar: {
+      name: 'The Old Hangar', floor: 820, amb: 'forest',
+      bg: () => Art5.hangarBg(S), fg: () => '',
+      entry: [60, 300],
+      hs: [
+        { id: 'doors', label: 'Hangar 2', hit: [150, 440, 400, 260], walk: 340, act: () => say('c', F().roofTalk ? 'HANGAR 2. R & V SALVAGE. Somebody has repainted the V. It is very shiny.' : 'HANGAR 2. R & V SALVAGE. Racket and Vex. This is where they launched from, back then.') },
+        { id: 'tower', label: 'Control tower radio', hit: [1290, 180, 150, 130], walk: 1290, draw: () => Art5.hangar.tower(), act: actTowerRadio },
+        { id: 'nest', label: 'Pip\'s nest', hit: [1380, 140, 70, 70], walk: 1300, draw: () => Art5.hangar.nest(S), act: () => say('c', "Pip has built a nest on the tower out of moss, a gold rivet and... my old ration paste wrapper. Pip is home.") },
+        { id: 'rail', label: () => (F().shipAtHangar && !F().ending ? 'The Dandelion, on the launch rail' : 'Launch rail'), hit: [820, 360, 380, 300], walk: 860, draw: () => (F().shipAtHangar && !F().ending ? Art5.hangar.ship(S) : ''), act: actRail },
+        { id: 'racketH', label: 'Racket', show: () => !!F().coreBuilt && !F().ending, hit: [630, 250, 140, 560], walk: 560, anyItem: true, draw: () => `<g transform="translate(700,806)">${Art.racket(S.repairs.core ? 'laugh' : 'soft')}</g>`, act: actRacket },
+        { id: 'vexH', label: 'Vex', show: () => !!F().coreBuilt && !F().ending, hit: [1225, 250, 130, 560], walk: 1170, draw: () => `<g transform="translate(1290,806)">${Art2.vex(S.repairs.core ? 'delight' : 'neutral')}</g>`, act: () => say('v', S.repairs.core ? 'It FLEW. I may have cried. Into the fire extinguisher.' : "I'm here. Front row. Fire extinguisher ready. Emotional support extinguisher.") },
+        { id: 'exit', label: 'Down to the garage', hit: [20, 780, 150, 100], walk: 110, draw: () => Art5.hangar.exit(), act: () => go('yard') },
+      ],
+      onEnter() { if (!F().hangarSeen) { F().hangarSeen = true; save(); setTimeout(() => say('c', "An old hangar in the fog. HANGAR 2, R & V SALVAGE. A launch rail runs up into the clouds. And the blinking light on the ridge... it's this tower."), 300); } },
+    },
     roof: {
       name: 'Garage Roof', floor: 0, amb: 'forest', noCrystal: true,
-      bg: () => Art2.roof(S, G.rMood(), 'neutral'), fg: () => '',
+      bg: () => Art2.roof(S, G.rMood(), 'neutral') + (G.tmp.roofVex ? `<g transform="translate(1110,718) scale(.74)">${Art2.vex('neutral')}</g>` : ''), fg: () => '',
       entry: [800, 800], hs: [], onEnter() {},
     },
   };
@@ -325,7 +358,16 @@
       return `Fix the hull: plates, gold rivets + rivet gun, mossback moss (${n}/3).`;
     }
     if (!f.phase4) return 'Talk to Racket.';
-    return 'Phase 4 complete! The engine core is next.';
+    if (f.freeplay) return 'Free play: visit anywhere, play anything.';
+    if (f.ending) return 'The end. (For now.)';
+    if (!f.coreTalked) return 'Talk to Racket about the engine core.';
+    if (S.repairs.core) return 'Celebrate. Then make a choice.';
+    if (f.coreBuilt) return 'Ignite the engine core at the Old Hangar (up the hill, out back).';
+    const reg = S.parts.regulator || G.has('core_regulator'), coil = S.parts.coil || G.has('flux_coil');
+    if (!reg && !f.crateSeen) return 'Fix the engine core: Racket mentioned a regulator. Look out back.';
+    const n = (reg ? 1 : 0) + (coil ? 1 : 0) + (f.corePrimed && f.coreTuned ? 1 : 0);
+    if (reg && coil) return 'Workbench: install, prime from the fuel cell, tune to the star chart, spin up.';
+    return `Fix the engine core: Long Shot regulator, flux coil, fuel + star chart (${n}/3).`;
   }
   function updateHud() {
     $('#loc').textContent = SCENES[S.scene].name;
@@ -594,6 +636,7 @@
       setTimeout(() => Cafe.open(), 2200);
       return;
     }
+    if (P5() && !F().coreBuilt && Math.random() < .5) say('r', ['Careful. That coffee maker gurgled at me this morning. We are not speaking.', "Don't trust that machine. It knows what it did.", 'If it gurgles, ignore it. I am.'][Math.random() * 3 | 0], 200);
     Cafe.open();
   }
   function actPegboard() {
@@ -1074,6 +1117,7 @@
     });
   }
   function actSteward(item) {
+    if (P5() && F().boarded && !F().coilGot && !item) { dlg('stewardCoil'); return; }
     if (item === 'boarding_pass' && !F().boarded) { dlg('stewardMeet'); return; }
     if (!F().boarded) { dlg('stewardMeet'); return; }
     if (item) { say('s', 'Thank you, madam, but I am not permitted to accept gifts. Tips, however...'); return; }
@@ -1114,6 +1158,126 @@
   }
   function plateMissingDone() { F().plateMissing = true; refresh(); }
   function plateFoundDone() { F().plateFound = true; G.friend(3); refresh(); }
+
+  // ---------------------------------------------------------------------------
+  // HOTSPOT ACTIONS — PHASE 5 (finale)
+  // ---------------------------------------------------------------------------
+  const crateGate = () => G.tier() >= 4 || !!F().roofTalk;
+  function actCrate() {
+    if (F().crateOpened) { say('c', "The crate's open now. The flight jacket is folded neatly on top. He comes out here sometimes, just to look."); return; }
+    F().crateSeen = true; save();
+    say('c', "A crate, half-buried under a tarp. Padlocked. 'RKT' scratched into the lid. This is Racket's. ...I should ask him. Not pry it open.");
+  }
+  function askCrate() {
+    setTimeout(() => {
+      if (!crateGate()) { dlg('crateNotYet'); return; }
+      const open = () => { G.tmp.racketYard = true; render(); setTimeout(() => dlg('crateOpen'), 300); };
+      if (S.scene === 'yard') open(); else { go('yard'); setTimeout(open, 2600); }
+    }, 350);
+  }
+  function crateDone() {
+    F().crateOpened = true;
+    refresh();
+    setTimeout(() => { G.tmp.racketYard = false; refresh(); }, 3200);
+    say('r', "...I'm gonna stay out here a minute. Go on. Workbench.", 400);
+  }
+  function actLadder() {
+    if (F().roofTalk) { say('c', 'The roof. It\'s kind of our spot now. All three of us. Vex left a sprinkle stain on the chimney.'); return; }
+    if (F().vexInvited && F().racketInvited) {
+      card('That night, on the garage roof...', () => {
+        $('#bubbles').innerHTML = '';
+        S.scene = 'roof'; G.tmp.roofVex = true;
+        refresh(); Sound.setAmbience('forest');
+        setTimeout(() => dlg('roofTalk'), 500);
+      });
+      return;
+    }
+    say('c', `It's a nice night for the roof. Better with company. ${F().vexInvited ? 'Vex is in. Now Racket.' : F().racketInvited ? 'Racket is in. Now Vex.' : 'Maybe Racket AND Vex, together. They still have things to say.'}`);
+  }
+  function roofTalkDone() {
+    F().roofTalk = true;
+    G.tmp.roofVex = false;
+    S.scene = 'garage';
+    refresh(); Sound.setAmbience('garage');
+    say('v', "I'm putting a raccoon sticker on my truck. Don't read into it. ...And I'm changing my JunkNet name. Don't read into THAT either.", 500);
+  }
+  const TOWER = ["The old radio crackles: '...Long Shot, you're clear for launch. Don't scratch the paint, Racket.' It's a younger Vex. A recording, looping for twenty years.", "Static, and then that recording again. Vex's voice, laughing at something Racket said two decades ago."];
+  function actTowerRadio() {
+    if (F().roofTalk) { say('c', "The radio crackles: 'Tower to Dandelion. Tower's open again.' It's Vex, testing a brand-new mic. She swears when she notices you listening."); return; }
+    const i = S.talked.tower || 0; S.talked.tower = i + 1; save();
+    say('c', TOWER[i % TOWER.length]);
+  }
+  function startForms() {
+    Mini.forms(() => { F().coilGot = true; G.give('flux_coil'); say('s', 'One flux coil. Gold-wound. Do give my regards to the engine.', 300); refresh(); });
+  }
+  function actRail() {
+    if (F().ending) { say('c', 'The old launch rail. The Dandelion flew from here. Pip has taken to sliding down it.'); return; }
+    if (!F().shipAtHangar) { say('c', "An old launch rail, rusty but solid, running up into the fog. Racket said we'd test the core here, where there's room to fail."); return; }
+    if (S.repairs.core) { dlg('endingChoice'); return; }
+    dlg('ignition');
+  }
+  function startChecklist() {
+    Mini.checklist(() => {
+      F().coreLit = true;
+      render();
+      Sound.sfx('roar');
+      shake();
+      card('IGNITION.', () => { S.repairs.core = true; save(); dlg('testFlight'); });
+    });
+  }
+  function afterFlight() {
+    F().coreLit = false;
+    refresh();
+    card("Back on the ground, it feels like the whole moon has shown up: Vex, STEWARD-9 (who walked up the canyon \"for the occasion\"), Pip, and the mossback, which followed Pip. Everyone wants a drink.", () => {
+      Cafe.rush(() => setTimeout(() => dlg('endingChoice'), 300));
+    });
+  }
+  function ending(kind) {
+    F().ending = kind; F().phase5 = true;
+    S.scene = 'garage'; S.pos.garage = 820;
+    save(); refresh(); Sound.setAmbience('garage');
+    const E = DATA.endings[kind];
+    const close = card('', null, {
+      title: E.title, noTap: true,
+      html: `<div class="ending">${E.epilogue.split('\n\n').map((p) => `<p>${esc(p)}</p>`).join('')}
+        <div class="end-last"><div class="pframe">${Art.portrait('r', 'soft')}</div><p>"${esc(E.last)}"</p></div>
+        <div class="row"><button class="btn big" id="end-credits">Roll credits</button></div></div>`,
+    });
+    $('#end-credits').addEventListener('click', () => { Sound.sfx('click'); close(); setTimeout(() => showCredits(kind), 480); });
+  }
+  function showCredits(kind) {
+    const callbacks = [
+      ['first_wrench', 'The 10 mm wrench', '"They are NOT the same wrench."'],
+      ['garage_key', 'The raccoon keychain', '"It CAME with the key."'],
+      ['noodle_cup', 'The noodle cup', '"I boiled water. Twice."'],
+      ['monstrosity', 'The French Vanilla Monstrosity', '"Regular coffee. For adults."'],
+    ];
+    const cast = [['Racket', 'grumpy mechanic, secretly soft'], ['Crystal Lynx', 'pilot, explorer, crew'], ['Scrapqueen Vex', `a.k.a. ${vexName()}`], ['STEWARD-9', 'forty years of excellent service'], ['Pip', 'six-legged owl, shortcut expert'], ['The mossback', 'asleep for most of this'], ['The sock', 'it stays']];
+    const close = card('', null, {
+      title: "Racket's Garage", noTap: true,
+      html: `<div class="credits"><div class="credits-roll">
+        <p class="muted">Starring</p>${cast.map(([n, r]) => `<p><b>${esc(n)}</b><span>${esc(r)}</span></p>`).join('')}
+        <p class="muted">Featuring</p>
+        <div class="callbacks">${callbacks.map(([icon, n, q]) => `<div class="cb">${Art.icon(icon)}<b>${esc(n)}</b><span>${esc(q)}</span></div>`).join('')}</div>
+        <p class="muted">Thanks for playing.</p>
+        <p class="end-tag">${kind === 'return' ? 'Every time.' : kind === 'together' ? 'Co-pilots.' : 'Same size letters.'}</p>
+      </div>
+      <div class="row"><button class="btn big" id="free-play">Free play</button><button class="btn" id="end-title">Back to title</button></div></div>`,
+    });
+    Sound.sfx('success');
+    // let the credits roll on their own (tap or scroll to take over)
+    const roll = $('.credits-roll');
+    let rolling = true;
+    roll.addEventListener('pointerdown', () => { rolling = false; });
+    const iv = setInterval(() => { if (!document.body.contains(roll) || !rolling) { clearInterval(iv); return; } roll.scrollTop += 1; if (roll.scrollTop + roll.clientHeight >= roll.scrollHeight - 1) clearInterval(iv); }, 30);
+    $('#free-play').addEventListener('click', () => { Sound.sfx('click'); close(); setTimeout(startFreePlay, 480); });
+    $('#end-title').addEventListener('click', () => { Sound.sfx('click'); F().freeplay = true; save(); close(); setTimeout(showTitle, 480); });
+  }
+  function startFreePlay() {
+    F().freeplay = true;
+    refresh();
+    say('r', F().ending === 'together' ? "Between trips, then. Go on, poke around. Everything's open." : F().ending === 'stay' ? "Shop's open, partner. Go on, poke around. Everything's open." : "You're back! Go on, poke around. Everything's open. Noodles at six.", 400);
+  }
 
   // ---------------------------------------------------------------------------
   // DIALOGUE RUNNER
@@ -1287,6 +1451,11 @@
       const lbl = ok ? 'Fueled and ready' : F().torchGot ? 'Got it, but it needs fuel (JunkNet)' : 'Vex has one. She wants something shiny.';
       rows = rows.replace('</li>', `</li><li class="part ${ok ? 'installed' : F().torchGot ? 'found' : 'missing'}"><span class="chk">${ok ? '✔' : F().torchGot ? '●' : '○'}</span><span class="pn">Cutting torch (tool)</span><span class="pw">${esc(lbl)}</span></li>`);
     }
+    if (key === 'core') {
+      const st = F().corePrimed && F().coreTuned && F().coreSpun;
+      rows += `<li class="part ${st ? 'installed' : 'missing'}"><span class="chk">${st ? '✔' : '○'}</span><span class="pn">Fuel, star chart, spin</span><span class="pw">${esc(st ? 'Primed, tuned and spinning' : 'At the workbench: prime from the fuel cell, tune to the star chart, spin it up')}</span></li>`;
+      rows += `<li class="part ${S.repairs.core ? 'installed' : F().coreBuilt ? 'found' : 'missing'}"><span class="chk">${S.repairs.core ? '✔' : F().coreBuilt ? '●' : '○'}</span><span class="pn">Ignition</span><span class="pw">${esc(S.repairs.core ? 'She flew!' : 'At the Old Hangar, up the hill out back')}</span></li>`;
+    }
     if (key === 'hull') {
       const r = F().riveted, has = G.has('gold_rivets') && G.has('rivet_gun');
       rows += `<li class="part ${r ? 'installed' : has ? 'found' : 'missing'}"><span class="chk">${r ? '✔' : has ? '●' : '○'}</span><span class="pn">Gold rivets + rivet gun</span><span class="pw">${esc(r ? 'Riveted' : 'Rivets from the Gilded Gull, gun from the pegboard')}</span></li>`;
@@ -1300,11 +1469,11 @@
   }
   function openShip(fromCrash) {
     const first = fromCrash && !F().sawDiag;
-    const online = ['fuel', 'thrusters', 'nav', 'hull'].filter((k) => S.repairs[k]).length;
+    const online = ['fuel', 'thrusters', 'nav', 'hull', 'core'].filter((k) => S.repairs[k]).length;
     const rows = SYSTEMS.map((s) => {
       const done = S.repairs[s.id];
-      const active = (s.id === 'fuel' && !done) || (s.id === 'thrusters' && S.repairs.fuel && F().phase1 && !done) || (s.id === 'nav' && S.repairs.thrusters && P3() && !done) || (s.id === 'hull' && S.repairs.nav && P4() && !done);
-      if (done) return `<div class="sys done"><div class="sys-head"><span class="sys-name">${s.name}</span><span class="chip ok">ONLINE</span></div><p class="sys-note">${s.id === 'fuel' ? "Humming happily. Racket pretends he isn't proud of it." : s.id === 'thrusters' ? 'Test-fired. Roars like a dragon with hiccups.' : s.id === 'nav' ? 'CONFIDENT. Current location: Verdance. Current mood: hopeful.' : 'SEALED. Gold rivets. Zero face-shaped dents.'}</p></div>`;
+      const active = (s.id === 'fuel' && !done) || (s.id === 'thrusters' && S.repairs.fuel && F().phase1 && !done) || (s.id === 'nav' && S.repairs.thrusters && P3() && !done) || (s.id === 'hull' && S.repairs.nav && P4() && !done) || (s.id === 'core' && P5() && !done);
+      if (done) return `<div class="sys done"><div class="sys-head"><span class="sys-name">${s.name}</span><span class="chip ok">ONLINE</span></div><p class="sys-note">${s.id === 'fuel' ? "Humming happily. Racket pretends he isn't proud of it." : s.id === 'thrusters' ? 'Test-fired. Roars like a dragon with hiccups.' : s.id === 'nav' ? 'CONFIDENT. Current location: Verdance. Current mood: hopeful.' : s.id === 'hull' ? 'SEALED. Gold rivets. Zero face-shaped dents.' : 'QUIET. Steady. Humming. Sounds like a ship that wants to go places.'}</p></div>`;
       if (active) return `<div class="sys active"><div class="sys-head"><span class="sys-name">${s.name}</span><span class="chip bad">${s.id === 'fuel' ? 'CRITICAL' : 'OFFLINE'}</span></div><p class="sys-note">${esc(s.diag)}</p><ul class="parts">${partRows(s.id)}</ul></div>`;
       return `<div class="sys locked"><div class="sys-head"><span class="sys-name">${s.name}</span><span class="chip warn">${first ? 'DAMAGED' : 'LOCKED'}</span></div>
         <p class="sys-note">${esc(first || !F().metRacket ? s.diag : s.lockedHint)}</p></div>`;
@@ -1335,6 +1504,10 @@
     { id: 'knots', name: 'ROPE KNOTS', body: "Vex's knot drills. Magpies are excellent at knots.", ok: () => F().bridgeFixed, run: (cb) => Mini.knots(cb) },
     { id: 'moss', name: 'MOSS GROOMING', body: 'Brush the sleepy mossback. Gently.', ok: () => F().mossTaken, run: (cb) => Mini.moss(cb) },
     { id: 'rivets', name: 'RIVET RHYTHM', body: 'BAM BAM BAM. In time, please.', ok: () => F().riveted, run: (cb) => Mini.rivets(cb) },
+    { id: 'coreBalance', name: 'CORE BALANCE', body: 'Keep the three bars level. Breathe.', ok: () => F().coreSpun, run: (cb) => Mini.coreBalance(cb) },
+    { id: 'forms', name: 'FORM 27-B/6', body: 'Paperwork, in triplicate. STEWARD-9 is thrilled.', ok: () => F().coilGot, run: (cb) => Mini.forms(cb) },
+    { id: 'checklist', name: 'LAUNCH CHECKLIST', body: 'He calls it, you flip it.', ok: () => S.repairs.core, run: (cb) => Mini.checklist(cb) },
+    { id: 'rush', name: 'CAFÉ RUSH', body: 'Everyone wants a drink. Even the robot.', ok: () => S.repairs.core, run: (cb) => Cafe.rush(cb) },
     { id: 'gasket', name: 'GASKET CUTTING', body: 'Trace the outline, 1 to 16.', ok: () => S.repairs.thrusters, run: (cb) => Mini.gasket(cb) },
   ];
   const REPLAY_LINES = ['Again? ...Fine. Two credits. Go wild.', "You just like doing that, huh. Me too. Don't tell anyone.", 'Two credits. And a nod. *nods*', 'You know these are chores, right? ...Okay. Two credits.'];
@@ -1411,7 +1584,7 @@ PASSWORD: ________</pre>
       return;
     }
     const sellable = S.inv.filter((i) => DATA.sellPrices[i]);
-    const listings = DATA.listings.filter((l) => !l.phase || (l.phase === 2 ? F().phase1 : l.phase === 3 ? F().phase2 : F().phase3)).map(listing).map((l) => {
+    const listings = DATA.listings.filter((l) => !l.phase || (l.phase === 2 ? F().phase1 : l.phase === 3 ? F().phase2 : l.phase === 4 ? F().phase3 : F().phase4 && (l.id !== 'calm' || F().roofTalk))).map(listing).map((l) => {
       let btn;
       if (owned(l.id)) btn = `<span class="tag ok">PURCHASED</span>`;
       else if (l.status) btn = `<span class="tag">${l.status}</span>`;
@@ -1421,7 +1594,7 @@ PASSWORD: ________</pre>
         <div class="l-seller">seller: ${l.seller} ${'★'.repeat(l.stars)}${'☆'.repeat(5 - l.stars)}</div></div><div class="l-act">${btn}</div></div>`;
     }).join('');
     const sell = sellable.length
-      ? sellable.map((i) => { const [buyer, quote] = DATA.buyers[i] || ['scrapmonger_88', 'i buy anything.']; return `<div class="listing"><div class="l-main"><div class="l-name">${esc(itemName(i))}</div><div class="l-blurb">Buyer ${buyer}: "${esc(quote)}"</div></div>
+      ? sellable.map((i) => { let [buyer, quote] = DATA.buyers[i] || ['scrapmonger_88', 'i buy anything.']; if (buyer === 'scrapmonger_88') { buyer = vexName(); if (F().roofTalk) quote = 'hi kid!! i buy anything. ANYTHING. with love. (that last part is new.)'; } return `<div class="listing"><div class="l-main"><div class="l-name">${esc(itemName(i))}</div><div class="l-blurb">Buyer ${buyer}: "${esc(quote)}"</div></div>
           <div class="l-act"><button class="term-btn buy" data-sell="${i}">SELL · ${DATA.sellPrices[i]} CR</button></div></div>`; }).join('')
       : `<p class="muted">Nothing to sell. Junk from the crash site and the junkyard sells here.</p>`;
     body.innerHTML = `<div class="crt">
@@ -1433,7 +1606,7 @@ PASSWORD: ________</pre>
     $$('[data-joke]', body).forEach((b) => b.addEventListener('click', () => {
       Sound.sfx('error');
       const j = b.dataset.joke;
-      renderTerminal(j === 'core' ? 'INSUFFICIENT FUNDS. Also, Racket has blocked this seller. Reason: "we have our own haunted engine core, thanks."' : j === 'jar' ? 'INSUFFICIENT INTEREST. Racket: "We are not buying a jar."' : j === 'moss' ? 'PURCHASE BLOCKED BY USER rkt. Reason: "leave the moss alone."' : j === 'muffler' ? `INSUFFICIENT FUNDS. You have ${S.credits} CR. You need 9,999 CR. And a reason.` : j === 'wrench' ? 'INSUFFICIENT FUNDS. The wrench understands. The wrench is always here for you.' : 'INSUFFICIENT FUNDS. Also, rude to even look.');
+      renderTerminal(j === 'calm' ? 'PURCHASED... no wait. Seller featherhug_88 has cancelled and sent it as a gift. To rkt. Note: "for the shaky paws. -V"' : j === 'core' ? 'INSUFFICIENT FUNDS. Also, Racket has blocked this seller. Reason: "we have our own haunted engine core, thanks."' : j === 'jar' ? 'INSUFFICIENT INTEREST. Racket: "We are not buying a jar."' : j === 'moss' ? 'PURCHASE BLOCKED BY USER rkt. Reason: "leave the moss alone."' : j === 'muffler' ? `INSUFFICIENT FUNDS. You have ${S.credits} CR. You need 9,999 CR. And a reason.` : j === 'wrench' ? 'INSUFFICIENT FUNDS. The wrench understands. The wrench is always here for you.' : 'INSUFFICIENT FUNDS. Also, rude to even look.');
     }));
     $$('[data-buy]', body).forEach((b) => b.addEventListener('click', () => {
       const l = listing(DATA.listings.find((x) => x.id === b.dataset.buy));
@@ -1475,9 +1648,11 @@ PASSWORD: ________</pre>
       G.take(id);
       S.sold.push(id);
       G.addCredits(DATA.sellPrices[id]);
-      const [buyer] = DATA.buyers[id] || ['scrapmonger_88'];
+      let [buyer] = DATA.buyers[id] || ['scrapmonger_88'];
+      if (buyer === 'scrapmonger_88') buyer = vexName();
       let m = `SOLD: ${itemName(id)} to ${buyer}.`;
       if (buyer === 'scrapmonger_88') m += ' "pleasure doing business. dont tell anyone."';
+      if (buyer === 'featherhug_88') m += ' "thanks kid!! tell racket hi. or dont. ok tell him hi."';
       if (scrapSold() >= 2 && S.jobs.scrap !== 'done') {
         S.jobs.scrap = 'done'; G.friend(3);
         m += '\nJOB COMPLETE: Haul scrap.';
@@ -1496,15 +1671,15 @@ PASSWORD: ________</pre>
     nozzles: 'Line up the flange. Torque it down. Hauler-7 nozzles, on a scout ship. Vex would be furious. I love it.',
     gasket: 'Gasket goes between the nozzles and the engine. Seat it flat. ...That seal is perfect. Huh.',
   };
-  const currentRepair = () => (!S.repairs.fuel ? 'fuel' : F().phase1 && !S.repairs.thrusters ? 'thrusters' : P3() && !S.repairs.nav ? 'nav' : P4() && !S.repairs.hull ? 'hull' : null);
-  const schematic = (key, parts, charged, t) => (key === 'fuel' ? Art.fuelCellSchematic(parts, charged, t) : key === 'thrusters' ? Art2.thrusterSchematic(parts, charged, t) : key === 'nav' ? Art3.navSchematic(parts, charged, t, F().navCalibrated) : Art4.hullSchematic(parts, charged, t, { riveted: F().riveted }));
+  const currentRepair = () => (P5() && !F().coreBuilt ? 'core' : !S.repairs.fuel ? 'fuel' : F().phase1 && !S.repairs.thrusters ? 'thrusters' : P3() && !S.repairs.nav ? 'nav' : P4() && !S.repairs.hull ? 'hull' : null);
+  const schematic = (key, parts, charged, t) => (key === 'fuel' ? Art.fuelCellSchematic(parts, charged, t) : key === 'thrusters' ? Art2.thrusterSchematic(parts, charged, t) : key === 'nav' ? Art3.navSchematic(parts, charged, t, F().navCalibrated) : key === 'hull' ? Art4.hullSchematic(parts, charged, t, { riveted: F().riveted }) : Art5.coreSchematic(parts, charged, t, { primed: F().corePrimed, tuned: F().coreTuned, spun: F().coreSpun }));
   function openWorkbench(item) {
     if (!F().metRacket) return;
     const key = currentRepair();
     if (!key) {
-      const next = S.repairs.hull ? 'Fuel cell, thrusters, navigation and hull are all done. That leaves <b>the engine core</b>. And the noise. Mostly the noise.' : S.repairs.nav ? 'Fuel cell, thrusters and navigation are online. Next up: <b>hull plating</b> and <b>the engine core</b>. The engine core is making a new noise.' : S.repairs.thrusters ? 'Fuel cell and thrusters are done. Next up: <b>navigation</b>. Racket mutters something about the Deep Woods.' : 'The fuel cell is installed and humming. Next up: <b>thrusters</b>. Racket says the junkyard\'s where you\'ll find them.';
-      const done = S.repairs.hull ? 'hull' : S.repairs.nav ? 'nav' : S.repairs.thrusters ? 'thrusters' : 'fuel';
-      modal('Workbench', `<div class="bench">${schematic(done, { casing: 1, crystal: 1, wiring: 1, nozzles: 1, gasket: 1, starcrystal: 1, chip: 1, plates: 1, sealant: 1 }, true, 1)}<p class="lead">${next}</p></div>`, { cls: 'bench-modal' });
+      const next = F().coreBuilt ? (S.repairs.core ? 'Every system is online. The Dandelion flies. There is nothing left to fix. (Racket keeps checking anyway.)' : 'The engine core is built and up at the Old Hangar. All that is left is the ignition.') : S.repairs.hull ? 'Fuel cell, thrusters, navigation and hull are all done. That leaves <b>the engine core</b>. And the noise. Mostly the noise.' : S.repairs.nav ? 'Fuel cell, thrusters and navigation are online. Next up: <b>hull plating</b> and <b>the engine core</b>. The engine core is making a new noise.' : S.repairs.thrusters ? 'Fuel cell and thrusters are done. Next up: <b>navigation</b>. Racket mutters something about the Deep Woods.' : 'The fuel cell is installed and humming. Next up: <b>thrusters</b>. Racket says the junkyard\'s where you\'ll find them.';
+      const done = F().coreBuilt ? 'core' : S.repairs.hull ? 'hull' : S.repairs.nav ? 'nav' : S.repairs.thrusters ? 'thrusters' : 'fuel';
+      modal('Workbench', `<div class="bench">${schematic(done, { casing: 1, crystal: 1, wiring: 1, nozzles: 1, gasket: 1, starcrystal: 1, chip: 1, plates: 1, sealant: 1, regulator: 1, coil: 1 }, true, 1)}<p class="lead">${next}</p></div>`, { cls: 'bench-modal' });
       return;
     }
     modal(`Workbench: ${DATA.repairs[key].name}`, '<div class="bench"></div>', { cls: 'bench-modal' });
@@ -1520,7 +1695,7 @@ PASSWORD: ________</pre>
     const el = $('#modal .bench');
     if (!el) return;
     const rep = DATA.repairs[key];
-    const all = rep.parts.every((p) => S.parts[p.key]) && (key !== 'nav' || F().navCalibrated) && (key !== 'hull' || F().riveted);
+    const all = rep.parts.every((p) => S.parts[p.key]) && (key !== 'nav' || F().navCalibrated) && (key !== 'hull' || F().riveted) && (key !== 'core' || F().coreSpun);
     const partsIn = rep.parts.every((p) => S.parts[p.key]);
     let rows = rep.parts.map((p) => {
       const inst = S.parts[p.key], have = G.has(p.item);
@@ -1536,6 +1711,16 @@ PASSWORD: ________</pre>
         <div class="bench-icon">${have || inst ? Art.icon(p.item) : '<span>?</span>'}</div>
         <div class="bench-info"><b>${p.name}</b><span>${info}</span></div><div>${action}</div></div>`;
     }).join('');
+    if (key === 'core') {
+      const steps = [
+        ['prime', 'Prime from the fuel cell', F().corePrimed, partsIn, 'The fuel cell from day one, still humming. It feeds the core its first charge.', 'Install the regulator and coil first.', 'charge_crystal', 'Prime'],
+        ['tune', 'Tune to the star chart', F().coreTuned, F().corePrimed, 'The nav star chart sets the core\'s rhythm. (It keeps trying to tune to the Wrench.)', 'Prime it first.', 'star_crystal', 'Tune'],
+        ['spin', 'Spin up the core', F().coreSpun, F().coreTuned, 'Spinning smooth and quiet. No KA-THUNK.', 'Tune it first.', 'flux_coil', 'Spin up'],
+      ];
+      steps.forEach(([id, name, done, ready, okInfo, waitInfo, icon, btn]) => {
+        rows += `<div class="bench-row ${done ? 'installed' : ready ? 'ready' : 'missing'}"><div class="bench-icon">${Art.icon(icon)}</div><div class="bench-info"><b>${name}</b><span>${done ? okInfo : ready ? 'Ready.' : waitInfo}</span></div><div>${done ? '<span class="tag ok">✔</span>' : ready ? `<button class="btn" data-core="${id}">${btn}</button>` : '<span class="tag">Waiting</span>'}</div></div>`;
+      });
+    }
     if (key === 'hull') {
       const ok = F().riveted, ready = S.parts.plates && G.has('rivet_gun') && G.has('gold_rivets');
       const act = ok ? '<span class="tag ok">✔</span>' : ready ? '<button class="btn" data-rivet="1">Rivet!</button>' : '<span class="tag">Waiting</span>';
@@ -1555,16 +1740,24 @@ PASSWORD: ________</pre>
       ? (all ? "That's all three. Seal it up and charge it. Don't blink." : "Bring me parts. Well, bring the BENCH parts. I'll watch.")
       : key === 'thrusters' ? (all ? "Nozzles on, gasket seated. Let's hear her. Test-fire when you're ready." : 'Nozzles and a gasket. Bring me both and we make some noise.')
         : key === 'nav' ? (all ? 'Calibrated. Boot her up, lynx. Let\'s see where she thinks she is.' : 'Star crystal, nav chip, working scanner. Then we teach her the sky.')
-          : (all ? 'Plates on, rivets in, moss sealed. Pressure test. Moment of truth.' : 'Plates, moss sealant, then rivets. In that order. Gold rivets. Unbelievable.');
+          : key === 'hull' ? (all ? 'Plates on, rivets in, moss sealed. Pressure test. Moment of truth.' : 'Plates, moss sealant, then rivets. In that order. Gold rivets. Unbelievable.')
+            : (all ? "She's spinning. She's quiet. ...Let's get her up the hill before I lose my nerve." : "Regulator, coil, then fuel, stars and spin. I'll be over here. Cleaning this. It's very dirty. (It is spotless.)");
     el.innerHTML = `<div class="schem-wrap">${schematic(key, S.parts, false, 0)}<div class="sparks"></div></div>
       <div class="bench-line"><b>Racket:</b> ${esc(line || idle)}</div>
       <div class="bench-rows">${rows}</div>
-      <div class="bench-foot"><div class="charge-bar"><i></i></div><button class="btn big" id="btn-charge" ${all ? '' : 'disabled'}>${key === 'fuel' ? 'Seal &amp; Charge' : key === 'thrusters' ? 'Fit &amp; Test-fire' : key === 'nav' ? 'Boot navigation' : 'Pressure test'}</button></div>`;
+      <div class="bench-foot"><div class="charge-bar"><i></i></div><button class="btn big" id="btn-charge" ${all ? '' : 'disabled'}>${key === 'fuel' ? 'Seal &amp; Charge' : key === 'thrusters' ? 'Fit &amp; Test-fire' : key === 'nav' ? 'Boot navigation' : key === 'hull' ? 'Pressure test' : 'Tow her to the hangar'}</button></div>`;
     if (justKey) { const g = $(`[data-part="${justKey}"]`, el); if (g) g.classList.add('just'); burst(14); }
     $$('[data-install]', el).forEach((b) => b.addEventListener('click', () => installPart(key, b.dataset.install)));
     $$('[data-craft]', el).forEach((b) => b.addEventListener('click', craftGasket));
     $$('[data-fix]', el).forEach((b) => b.addEventListener('click', fixScanner));
     $$('[data-cal]', el).forEach((b) => b.addEventListener('click', calibrate));
+    $$('[data-core]', el).forEach((b) => b.addEventListener('click', () => {
+      const id = b.dataset.core;
+      if (id === 'prime') { F().corePrimed = true; Sound.sfx('hum', 1.2); renderBench('core', null, 'Fuel cell from day one. Still humming. Look at that. Everything comes back around.'); save(); updateHud(); return; }
+      if (id === 'tune') { F().coreTuned = true; Sound.sfx('sparkle'); renderBench('core', null, "Star chart's locked in. It keeps drifting toward the Wrench. Good taste, this ship."); save(); updateHud(); return; }
+      closeModal();
+      setTimeout(() => Mini.coreBalance(() => { F().coreSpun = true; G.friend(2); save(); setTimeout(() => openWorkbench(), 350); }), 260);
+    }));
     $$('[data-rivet]', el).forEach((b) => b.addEventListener('click', () => {
       closeModal();
       setTimeout(() => Mini.rivets(() => { F().riveted = true; G.take('gold_rivets'); save(); setTimeout(() => openWorkbench(), 350); }), 260);
@@ -1590,6 +1783,13 @@ PASSWORD: ________</pre>
       G.friend(2);
       setTimeout(() => openWorkbench(), 350);
     }), 260);
+  }
+  function towToHangar() {
+    card("Racket's tow truck and Vex's truck haul the Dandelion up the hill together, very slowly, bickering the whole way. By midnight she's sitting on the old launch rail at Hangar 2.", () => {
+      F().shipAtHangar = true;
+      save();
+      go('hangar');
+    });
   }
   function fixScanner() {
     if (!(G.has('broken_scanner') && G.has('resonance_coil'))) return;
@@ -1626,21 +1826,21 @@ PASSWORD: ________</pre>
   function chargeRepair(key) {
     const el = $('#modal .bench');
     const btn = $('#btn-charge', el);
-    btn.disabled = true; btn.textContent = key === 'fuel' ? 'Charging...' : key === 'thrusters' ? 'Bolting on...' : key === 'nav' ? 'Booting...' : 'Pressurising...';
-    $$('[data-install],[data-craft],[data-fix],[data-cal],[data-rivet]', el).forEach((b) => (b.disabled = true));
+    btn.disabled = true; btn.textContent = key === 'fuel' ? 'Charging...' : key === 'thrusters' ? 'Bolting on...' : key === 'nav' ? 'Booting...' : key === 'hull' ? 'Pressurising...' : 'Hitching up...';
+    $$('[data-install],[data-craft],[data-fix],[data-cal],[data-rivet],[data-core]', el).forEach((b) => (b.disabled = true));
     $('#modal .x').disabled = true;
     Sound.sfx('hum', 3);
     const bar = $('.charge-bar i', el), wrap = $('.schem-wrap', el);
     const t0 = performance.now(), dur = 3000;
     let lastSpark = 0;
-    $('.bench-line', el).innerHTML = `<b>Racket:</b> ${key === 'fuel' ? 'Here we go. Easy... easy...' : key === 'thrusters' ? 'Torque check... seal check... okay. Okay. This is the fun part.' : key === 'hull' ? 'Pressurising... listen for hissing. ...Hear any hissing? Good. Me neither.' : 'Star chart loading... chip handshake... come on, girl, find yourself. ...I talk to ships. Shut up.'}`;
+    $('.bench-line', el).innerHTML = `<b>Racket:</b> ${key === 'fuel' ? 'Here we go. Easy... easy...' : key === 'thrusters' ? 'Torque check... seal check... okay. Okay. This is the fun part.' : key === 'hull' ? 'Pressurising... listen for hissing. ...Hear any hissing? Good. Me neither.' : key === 'core' ? 'Seating the core... gently... gently... okay. Okay. She\'s in.' : 'Star chart loading... chip handshake... come on, girl, find yourself. ...I talk to ships. Shut up.'}`;
     const step = (now) => {
       const t = Math.min(1, (now - t0) / dur);
       bar.style.width = t * 100 + '%';
       wrap.firstElementChild.outerHTML = schematic(key, S.parts, false, t);
       if (now - lastSpark > 180) { burst(4); Sound.sfx('spark'); lastSpark = now; }
       if (t < 1) { requestAnimationFrame(step); return; }
-      S.repairs[key] = true;
+      if (key === 'core') { F().coreBuilt = true; } else S.repairs[key] = true;
       Sound.sfx('success');
       burst(30);
       wrap.firstElementChild.outerHTML = schematic(key, S.parts, true, 1);
@@ -1652,10 +1852,11 @@ PASSWORD: ________</pre>
         ? '<b>FUEL CELL ONLINE.</b> The Dandelion\'s engine glows teal for the first time since the crash.'
         : key === 'thrusters' ? '<b>THRUSTERS FITTED.</b> Racket is already dragging the bay door open, looking like a kid on his birthday.'
           : key === 'nav' ? '<b>NAVIGATION ONLINE.</b> The star map spins up on the Dandelion\'s console, and it finally knows where it is.'
-            : '<b>HULL SEALED.</b> Not a single hiss. Three gleaming plates and a lot of very fancy rivets.';
+            : key === 'hull' ? '<b>HULL SEALED.</b> Not a single hiss. Three gleaming plates and a lot of very fancy rivets.'
+              : '<b>ENGINE CORE BUILT.</b> Quiet, steady, teal. Racket hasn\'t blinked in a full minute.';
       $('.bench-rows', el).innerHTML = '';
-      $('.bench-foot', el).innerHTML = `<button class="btn big" id="btn-done">${key === 'fuel' ? 'Nice!' : key === 'thrusters' ? "Let's fire her up!" : key === 'nav' ? 'Where are we?' : 'We did it!'}</button>`;
-      onModalClose = () => dlg(key === 'fuel' ? 'fuelDone' : key === 'thrusters' ? 'thrustersFit' : key === 'nav' ? 'navDone' : 'hullDone');
+      $('.bench-foot', el).innerHTML = `<button class="btn big" id="btn-done">${key === 'fuel' ? 'Nice!' : key === 'thrusters' ? "Let's fire her up!" : key === 'nav' ? 'Where are we?' : key === 'hull' ? 'We did it!' : 'Up the hill!'}</button>`;
+      onModalClose = key === 'core' ? towToHangar : () => dlg(key === 'fuel' ? 'fuelDone' : key === 'thrusters' ? 'thrustersFit' : key === 'nav' ? 'navDone' : 'hullDone');
       $('#btn-done', el).addEventListener('click', closeModal);
     };
     requestAnimationFrame(step);
@@ -1669,12 +1870,13 @@ PASSWORD: ________</pre>
       { id: 'garage', name: "Racket's Garage", note: f.sawDiag ? 'Grumpy raccoon. Good tools.' : 'Check your ship first.', open: f.sawDiag },
       { id: 'junkyard', name: "Vex's Junkyard", note: f.phase1 ? (f.vexMet ? 'Scrap, floodlights and one very opinionated magpie.' : 'Racket: "Fine. I\'m coming with you."') : 'Racket: "Not yet. Fuel cell first."', open: !!f.phase1 },
       { id: 'woods', name: 'Woods Edge', note: f.phase1 ? 'Past the crash site. Ember-bark trees and a fallen tree.' : 'Racket: "Stay out of the woods. For now."', open: !!f.phase1 },
-      { id: 'deep', name: 'The Deep Woods', note: f.logCut ? (f.pipFed ? "Pip's shortcut. Teal trees, fireflies, a snoring mossback." : 'Walk in from the Woods Edge. Pip might know a shortcut.') : f.phase2 ? 'Cut through the fallen tree at the Woods Edge first.' : 'A fallen tree blocks the path.', open: !!(f.logCut && f.pipFed) },
-      { id: 'glade', name: 'The Glade', note: f.gladeLit ? 'The ancient glowing tree.' : 'Somewhere past the dark path.', open: !!(f.gladeLit && f.pipFed) },
-      { id: 'wreck', name: 'The Old Wreck', note: f.rootsCleared ? (f.wreckStory ? 'The Long Shot.' : 'A mossy old hauler, swallowed by roots.') : 'Something past the tangled roots.', open: !!(f.rootsCleared && f.pipFed) },
+      { id: 'deep', name: 'The Deep Woods', note: f.logCut ? (f.pipFed ? "Pip's shortcut. Teal trees, fireflies, a snoring mossback." : 'Walk in from the Woods Edge. Pip might know a shortcut.') : f.phase2 ? 'Cut through the fallen tree at the Woods Edge first.' : 'A fallen tree blocks the path.', open: !!(f.logCut && (f.pipFed || f.freeplay)) },
+      { id: 'glade', name: 'The Glade', note: f.gladeLit ? 'The ancient glowing tree.' : 'Somewhere past the dark path.', open: !!(f.gladeLit && (f.pipFed || f.freeplay)) },
+      { id: 'wreck', name: 'The Old Wreck', note: f.rootsCleared ? (f.wreckStory ? 'The Long Shot.' : 'A mossy old hauler, swallowed by roots.') : 'Something past the tangled roots.', open: !!(f.rootsCleared && (f.pipFed || f.freeplay)) },
       { id: 'canyon', name: f.phase3 ? 'Canyon Rim' : '???', note: f.phase3 ? (f.canyonSeen ? "Red rock, a rope bridge, and Vex's truck." : 'Something big crashed in the canyon. Vex is coming, apparently.') : 'Racket goes quiet about the canyon.', open: !!f.phase3 },
       { id: 'gull', name: f.bridgeFixed ? 'The Gilded Gull' : '???', note: f.bridgeFixed ? 'A sunken luxury liner and its very polite robot.' : 'Something gold glints at the bottom of the canyon.', open: !!f.bridgeFixed },
-      { id: 'station', name: '???', note: f.phase4 ? 'The light on the ridge is blinking faster. (Coming soon)' : 'A light blinks on the ridge some nights.', open: false },
+      { id: 'yard', name: 'Behind the Garage', note: f.crateOpened ? 'Planters, a laundry line and an open crate.' : 'Planters, a laundry line and a locked crate.', open: !!f.phase4 },
+      { id: 'hangar', name: f.phase4 ? 'The Old Hangar' : '???', note: f.phase4 ? (f.hangarSeen ? 'Hangar 2, the launch rail and the blinking tower.' : 'The blinking light on the ridge. Up the hill, out back.') : 'A light blinks on the ridge some nights.', open: !!f.phase4 },
     ];
     modal('Map', `<div class="map">${locs.map((l) => `<button class="loc ${l.open ? '' : 'locked'} ${l.id === S.scene ? 'here' : ''}" data-loc="${l.id}" ${l.open ? '' : 'disabled'}>
       <span class="loc-name">${l.name}${l.id === S.scene ? ' <em>(you are here)</em>' : ''}</span><span class="loc-note">${esc(l.note)}</span></button>`).join('')}</div>`, { cls: 'map-modal' });
@@ -1784,7 +1986,9 @@ PASSWORD: ________</pre>
       const t = Math.min(G.tier(), DATA.idle.length - 1);
       let pool = DATA.idle[t];
       if (F().phase1 && DATA.idle2) pool = pool.concat(DATA.idle2[Math.min(t, DATA.idle2.length - 1)].filter((l) => F().vexMet || !/Vex|Bertha/.test(l)));
-      if (P4() && DATA.idle4) pool = pool.concat(DATA.idle4[Math.min(t, DATA.idle4.length - 1)]);
+      if (F().freeplay && DATA.idleFree) pool = DATA.idleFree[0].concat(pool.slice(0, 2));
+      else if (P5() && !S.repairs.core && DATA.idle5) pool = DATA.idle5[Math.min(t, DATA.idle5.length - 1)];
+      else if (P4() && DATA.idle4) pool = pool.concat(DATA.idle4[Math.min(t, DATA.idle4.length - 1)]);
       if (P3() && DATA.idle3) pool = pool.concat(DATA.idle3[Math.min(t, DATA.idle3.length - 1)].filter((l) => (F().reconciled || !/Vex called/.test(l)) && (!F().patch || !/sewing/.test(l))));
       let line = pool[Math.random() * pool.length | 0];
       if (line.includes('radio') && !F().radioFixed) line = pool[0];
@@ -1866,6 +2070,8 @@ PASSWORD: ________</pre>
     // Resume an interrupted story beat
     if (S.scene === 'roof') setTimeout(() => dlg('roof'), 500);
     else if (S.repairs.thrusters && !F().phase2) setTimeout(() => roofScene(), 400);
+    else if (S.repairs.core && !F().ending) { S.scene = 'hangar'; refresh(); setTimeout(() => dlg('endingChoice'), 500); }
+    else if (F().ending && !F().freeplay) setTimeout(() => startFreePlay(), 400);
     else if (S.repairs.hull && !F().phase4) setTimeout(() => dlg('hullDone'), 500);
     else if (S.repairs.nav && !F().patch) setTimeout(() => patchScene(), 400);
     else if (S.repairs.nav && F().patch && !F().phase3) setTimeout(() => dlg('patch2'), 500);
@@ -1897,7 +2103,7 @@ PASSWORD: ________</pre>
   // ---------------------------------------------------------------------------
   // BOOT
   // ---------------------------------------------------------------------------
-  $('#defs').innerHTML = `<defs>${Art.DEFS}${Art2.DEFS}${Art3.DEFS}${Art4.DEFS}</defs>`;
+  $('#defs').innerHTML = `<defs>${Art.DEFS}${Art2.DEFS}${Art3.DEFS}${Art4.DEFS}${Art5.DEFS}</defs>`;
   render(); updateHud(); renderTray();
   showTitle();
 })();

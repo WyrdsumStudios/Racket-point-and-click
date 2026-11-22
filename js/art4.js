@@ -96,7 +96,7 @@ const Art4 = (() => {
         : `<path d="M600,560 Q640,620 650,700 M600,600 Q630,660 640,760 M1100,560 Q1070,620 1060,690 M1100,600 Q1080,660 1074,740" stroke="#c9a06a" stroke-width="4" fill="none"/>
            <rect x="630" y="690" width="22" height="8" fill="#8a5a34" transform="rotate(70 640 694)"/><rect x="1050" y="680" width="22" height="8" fill="#8a5a34" transform="rotate(-60 1060 684)"/>`}
     </g>`,
-    truck: () => `<g>
+    truck: (sticker) => `<g>
       <ellipse cx="240" cy="690" rx="190" ry="18" fill="#000" opacity=".35"/>
       <path d="M70,660 L70,590 Q72,570 96,568 L230,566 L262,520 Q270,510 286,510 L360,510 Q386,512 392,540 L404,600 L404,660Z" fill="#4a3a6a" stroke="#23182e" stroke-width="3"/>
       <path d="M272,528 L352,528 L366,584 L262,584Z" fill="#2a3a50" stroke="#23182e" stroke-width="2"/>
@@ -107,6 +107,7 @@ const Art4 = (() => {
       ${[100, 160, 220].map((x, i) => `<circle cx="${x}" cy="610" r="10" fill="${['#c9d0d6', '#e2b84a', '#c9d0d6'][i]}" stroke="#6d767c" stroke-width="2"/>`).join('')}
       <rect x="396" y="612" width="14" height="10" rx="2" fill="#ffe46a"/>
       <text x="200" y="645" font-size="14" text-anchor="middle" fill="#e2b84a" font-family="Fredoka, sans-serif" font-weight="600">VEX'S SALVAGE</text>
+      ${sticker ? '<g transform="translate(96,628) rotate(-4)"><rect x="-26" y="-12" width="52" height="24" rx="5" fill="#f2ead8" stroke="#2f6f60" stroke-width="2"/><path d="M-20,-1 Q-12,-8 -4,-1 L-6,3 Q-12,0 -18,3Z" fill="#23252a"/><circle cx="-15" cy="-1" r="1.4" fill="#86d65e"/><circle cx="-9" cy="-1" r="1.4" fill="#86d65e"/><text x="10" y="4" font-size="7" text-anchor="middle" fill="#2f6f60" font-family="Fredoka, sans-serif" font-weight="600">MY PAL</text></g>' : ''}
     </g>`,
     exitLeft: () => Art3.deep.exit(),
     down: () => `<g class="exit-arrow"><path d="M1500,720 L1556,750 L1500,780" stroke="#ffe0a0" stroke-width="10" fill="none" stroke-linecap="round" stroke-linejoin="round"/><path d="M1468,720 L1524,750 L1468,780" stroke="#ffe0a0" stroke-width="10" fill="none" stroke-linecap="round" stroke-linejoin="round" opacity=".45"/></g>`,

@@ -2,7 +2,7 @@
 
 A cozy, slightly gritty sci-fi point-and-click adventure. Crystal Lynx crash-lands her scout ship, the *Dandelion*, in the woods of an alien moon. The only mechanic for miles is Racket, a tall, grumpy, sarcastic raccoon who agrees to fix it mostly so she'll leave. Scavenge parts, earn scrap credits, shop a very sketchy parts marketplace, and slowly win him over.
 
-**Status: Phase 4 play-test build** (Phases 1 to 4 are playable).
+**Status: complete** (all five phases, three endings and free play). Play-test build.
 
 ## Play
 
@@ -65,6 +65,22 @@ It works on desktop (mouse and keyboard) and on tablets (touch, landscape or por
 - **Story:** Vex road-trips with Crystal while Racket stays home glaring at the engine core. One of the three plates goes missing back at the garage. The scanner finds it under the workbench, and Racket admits he hid it because a fixed ship means Crystal leaves. Crystal's answers are reassuring but leave the ending open. The hull celebration finally exposes Racket's love of the French Vanilla Monstrosity to Vex, then the engine core makes the new noise.
 - **Mini-games:** Rope Knots (repeat Vex's sequence), Moss Grooming (brush the glowing tufts), Rivet Rhythm, and Bolt Bin IV (a conveyor belt). All join the job board's For Fun section once beaten.
 
+## Phase 5: The Engine Core (finale)
+
+- **New scenes:** Behind the Garage (planters, a laundry line with a suspicious sock, and Racket's locked crate) and the Old Hangar on the hill: Hangar 2, R & V Salvage, with the old launch rail and the blinking control tower where Pip now nests. The blinking light on the ridge was this tower all along.
+- **The engine core** is the same model that failed on the Long Shot. Racket is quietly scared of it: he cleans clean tools and picks fights with the coffee maker.
+- **Repair chain:**
+  1. **The Long Shot's core regulator**, from Racket's locked crate. He only opens it at the highest friendship, or after the roof talk. Inside: two crew tags (RKT and VX), an old photo, and his first 10 mm wrench.
+  2. **A flux coil from STEWARD-9**, released only with Form 27-B/6 filled in correctly, in triplicate (Form in Triplicate).
+  3. **At the workbench:** prime the core from the Phase 1 fuel cell, tune it to the Phase 3 star chart, then spin it up (Core Balance).
+  4. **Ignition at the Old Hangar.** Racket's paw shakes, so you steady it, then run the Launch Checklist with him.
+- **The roof talk (optional):** invite Vex and Racket, then climb the ladder in the garage. "You TOLD me to go." "I know. I'd tell you again." Afterwards Vex's JunkNet name changes from scrapmonger_88 to featherhug_88, and her truck gets a raccoon bumper sticker.
+- **After the test flight:** Café Rush, a celebration order for everyone (STEWARD-9 takes "oil, lightly frothed"). Then Crystal chooses:
+  - **"I'll come back. Every time."** Postcards on the pegboard, and the Dandelion landing again.
+  - **"Come with me."** Vex sends Racket off and watches the garage.
+  - **"I'm staying."** RACKET & LYNX · REPAIRS, same size letters.
+- **Credits** with the callbacks: the 10 mm wrench, the raccoon keychain, the noodle cup and the Monstrosity. Then **free play**: every area is open, and every mini-game can be replayed from the job board.
+
 ## The Garage Café
 
 A coffee cart in the garage corner, under the job board: an old espresso machine, a kettle, mismatched mugs and a creamer shelf. It's broken until Phase 1 is done, then Racket fixes it ("Don't make it weird. ...Make me something.").
@@ -85,12 +101,14 @@ js/art.js         Phase 1 artwork as hand-built SVG (scenes, characters, items)
 js/art2.js        Phase 2 artwork (junkyard, Vex, woods edge, roof, new items)
 js/art3.js        Phase 3 artwork (deep woods, glade, old wreck, Pip, new items)
 js/art4.js        Phase 4 artwork (canyon rim, Gilded Gull, STEWARD-9, new items)
+js/art5.js        Phase 5 artwork (behind the garage, the Old Hangar, endings, credits)
 js/data.js        Phase 1 items, dialogue trees, banter, shop listings, jobs
 js/data2.js       Phase 2 items, dialogue (Vex, test-fire, roof), listings, jobs
 js/data3.js       Phase 3 items, dialogue (the wreck, Vex and Racket, the patch), listings
 js/data4.js       Phase 4 items, dialogue (the canyon, STEWARD-9, the hidden plate), listings
-js/minigames.js   bolt sorting, tune-up, wires, breakers, gasket, fireflies, star map, root maze, knots, moss, rivets, conveyor
-js/cafe.js        the Garage Café: coffee cart art, drink-making game, Racket and Vex reactions
+js/data5.js       Phase 5 items, dialogue (the core, the roof talk, the crate, the flight, three endings)
+js/minigames.js   bolt sorting, tune-up, wires, breakers, gasket, fireflies, star map, root maze, knots, moss, rivets, conveyor, core balance, forms, launch checklist
+js/cafe.js        the Garage Café: drink-making game, reactions, and the finale's Café Rush
 js/engine.js      state, scenes and hotspots, walking, dialogue runner, modals, saving
 ```
 
@@ -102,5 +120,4 @@ js/engine.js      state, scenes and hotspots, walking, dialogue runner, modals, 
 
 ## Roadmap
 
-- **Next:** the engine core (KA-THUNK, whirr, CLANK) and the blinking light on the ridge.
-- **The finale:** what happens when the Dandelion can fly again. Does Crystal leave, stay, or take Racket with her? That one is still the author's call.
+The story is complete. Possible extras: drink orders Racket requests himself, more free-play chores, and a Pip side-quest.
