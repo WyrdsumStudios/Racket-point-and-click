@@ -132,8 +132,11 @@ D.hub = (G) => {
     lines: [R(G.rMood(), greet)],
     choices: [
       { t: "Where do I find parts for the fuel cell?", if: () => !S.repairs.fuel, go: 'hintFuel' },
-      { t: "What's next for the ship?", if: () => S.repairs.fuel, say: [R('grump', "Thrusters. And for that we need the junkyard. Tomorrow."), R('smirk', "Tonight, you rest. That's an order. I'm very bossy.")], go: back },
+      { t: "How do I fix the thrusters?", if: () => S.repairs.fuel && S.flags.phase1 && !S.repairs.thrusters, go: 'hintThrusters' },
+      { t: "What's next for the ship?", if: () => S.repairs.fuel && !S.flags.phase1, say: [R('grump', "Thrusters. And for that we need the junkyard. Tomorrow."), R('smirk', "Tonight, you rest. That's an order. I'm very bossy.")], go: back },
+      { t: "What's next for the ship?", if: () => S.repairs.thrusters, say: [R('grump', "Navigation. Which means the Deep Woods. Which means that fallen tree."), R('smirk', "Tomorrow, lynx. Tonight the torch stays off. ...Mostly.")], go: back },
       { t: "Got any work for me?", go: 'hintJobs' },
+      { t: "So... you and Vex?", if: () => S.flags.vexMet, go: 'racketVex' },
       { t: "Tell me about yourself.", go: 'lore' },
       { t: "Just thought I'd hang out for a bit.", go: 'hang' },
       { t: "Here's your pry bar back. Still straight.", if: () => G.has('pry_bar') && S.flags.casingTaken, go: 'retPry' },
@@ -177,7 +180,13 @@ D.hintJobs = (G) => {
   if (J.radio !== 'done') lines.push(R('grump', "Radio's been dead a week. Needs a fuse. Bet that fancy ship of yours carried a spare."));
   if (J.bolts !== 'done') lines.push(R('grump', "Bolt bin needs sorting. Small, medium, large. Even you can manage that."));
   if (J.scrap !== 'done') lines.push(R('smirk', "Your wreck shed scrap all over the woods. JunkNet buys scrap. Barely."));
-  if (!lines.length) lines.push(R('smirk', "I'm out of jobs. And patience. Mostly jobs."));
+  if (G.S.flags.phase1) {
+    if (J.bolts2 !== 'done') lines.push(R('grump', "Somebody dumped nuts and washers in my bolt bin. I have a suspect. She has feathers."));
+    if (J.tune !== 'done') lines.push(R('grump', "Tow truck's coughing. Needs a tune-up. Gentle hands. Good timing."));
+    if (J.wires !== 'done') lines.push(R('grump', "Workbench wiring's a mess. Match 'em up. If it sparks, it's wrong."));
+    if (G.S.flags.vexMet) lines.push(R('smirk', "And junk from Vex's piles sells on JunkNet. Somebody always buys it. Usually Vex."));
+  }
+  if (!lines.length) lines.push(R('smirk', "I'm out of new jobs. But the board takes repeat customers. Couple credits a go."));
   return { lines, go: () => { G.tmp.again = true; return 'hub'; } };
 };
 

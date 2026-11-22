@@ -316,6 +316,8 @@ const Art = (() => {
       <rect x="-322" y="-48" width="76" height="70" rx="16" fill="url(#g-metal)" stroke="#4d555b" stroke-width="3"/>
       <rect x="-312" y="-36" width="56" height="8" rx="3" fill="#6d767c"/>
       <ellipse cx="-322" cy="-13" rx="13" ry="31" fill="#23272b" stroke="#4d555b" stroke-width="3"/>
+      ${o.nozzle ? `<path d="M-322,-44 L-352,-56 L-352,30 L-322,18Z" fill="url(#g-copper)" stroke="#7a3a1a" stroke-width="3"/><ellipse cx="-352" cy="-13" rx="10" ry="43" fill="#2a1a12" stroke="#c97a3a" stroke-width="3"/>` : ''}
+      ${o.flames ? `<g class="flames"><path d="M-352,-50 Q-470,-30 -560,-13 Q-470,4 -352,24Z" fill="#7affe4" opacity=".55"/><path d="M-352,-34 Q-440,-20 -500,-13 Q-440,-6 -352,8Z" fill="#eafffb"/><ellipse cx="-420" cy="-13" rx="120" ry="70" fill="url(#g-teal-glow)"/></g>` : ''}
       ${o.glow ? `<ellipse class="engine-glow" cx="-330" cy="-13" rx="34" ry="40" fill="url(#g-teal-glow)"/>` : ''}
       <path d="M-205,-52 L-252,-130 L-186,-128 L-140,-62Z" fill="#ddd3bc" stroke="#7d745f" stroke-width="3" stroke-linejoin="round"/>
       <path d="M-230,-112 L-193,-111 L-179,-92 L-218,-92Z" fill="#d36a32"/>
@@ -532,14 +534,14 @@ const Art = (() => {
       <path d="M322,560 L318,700 M338,560 L340,700" stroke="#43927e" stroke-width="3"/>
       <rect x="66" y="714" width="14" height="14" fill="#2a1a12"/><rect x="380" y="714" width="14" height="14" fill="#2a1a12"/>
       ${mittsOnCouch ? `<g transform="translate(64,580) rotate(-14)"><path d="M0,40 L0,14 Q0,0 12,0 Q24,0 24,14 L24,18 Q32,14 34,22 Q36,28 26,32 L24,40Z" fill="#c0392b"/><rect x="-2" y="36" width="28" height="9" rx="3" fill="#f2ead8"/><circle cx="8" cy="14" r="2" fill="#f2ead8"/><circle cx="16" cy="24" r="2" fill="#f2ead8"/></g>${sparkle(76, 590, .7, 1.1)}` : ''}
-      ${S.flags.noodles ? `<g><path d="M372,598 L380,628 L398,628 L406,598Z" fill="#f2ead8"/><rect x="370" y="594" width="38" height="6" rx="2" fill="#c0392b"/><path d="M380,592 Q384,580 380,570 M394,592 Q398,578 394,566" stroke="#fff" stroke-width="1.5" fill="none" opacity=".5"/>
+      ${S.flags.noodles ? `<g>${S.flags.cupTaken ? '' : '<path d="M372,598 L380,628 L398,628 L406,598Z" fill="#f2ead8"/><rect x="370" y="594" width="38" height="6" rx="2" fill="#c0392b"/>'}
         <path d="M44,598 L52,628 L70,628 L78,598Z" fill="#f2ead8"/><rect x="42" y="594" width="38" height="6" rx="2" fill="#2f8f80"/></g>` : ''}
     </g>`,
-    bayShip: (S) => `<g>
+    bayShip: (S, fx) => `<g class="${fx ? 'rumble' : ''}">
       <ellipse cx="1385" cy="652" rx="210" ry="18" fill="#000" opacity=".45"/>
       <path d="M1290,650 L1300,600 M1480,650 L1470,600" stroke="#d6a43a" stroke-width="10"/>
       <rect x="1270" y="640" width="44" height="12" fill="#3b3430"/><rect x="1456" y="640" width="44" height="12" fill="#3b3430"/>
-      <g transform="translate(1385,540) scale(.66)">${ship({ damaged: true, glow: S.repairs.fuel })}</g>
+      <g transform="translate(1385,540) scale(.66)">${ship({ damaged: !S.repairs.thrusters, glow: S.repairs.fuel, nozzle: S.repairs.thrusters, flames: fx })}</g>
       ${S.repairs.fuel ? '' : sparkle(1290, 520, .6, 2.1)}
     </g>`,
     exit: () => `<g class="exit-arrow">
@@ -739,5 +741,5 @@ const Art = (() => {
       garageFg() + `<rect width="1600" height="900" fill="#0a1210" opacity=".45"/>` + overlays();
   }
 
-  return { DEFS, overlays, racket, crystal, portrait, ship, garageBg, garageFg, garage, crashBg, crash, icon, fuelCellSchematic, bolt, sock, titleArt, sparkle };
+  return { ICONS, DEFS, overlays, racket, crystal, portrait, ship, garageBg, garageFg, garage, crashBg, crash, icon, fuelCellSchematic, bolt, sock, titleArt, sparkle };
 })();

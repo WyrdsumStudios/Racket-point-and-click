@@ -60,6 +60,16 @@ const Sound = (() => {
     blipR: () => tone(140 + Math.random() * 45, { type: 'square', d: .035, v: .03 }),
     blipC: () => tone(470 + Math.random() * 90, { type: 'triangle', d: .035, v: .055 }),
     blipN: () => tone(320, { type: 'sine', d: .03, v: .025 }),
+    blipV: () => tone(300 + Math.random() * 70, { type: 'sawtooth', d: .03, v: .025 }),
+    rummage: () => { for (let i = 0; i < 4; i++) noise({ t: i * .09, f: 900 + Math.random() * 2000, q: 3, d: .07, v: .35 }); tone(180, { type: 'triangle', t: .3, d: .2, v: .12, slide: 120 }); },
+    torch: () => { noise({ f: 3000, type: 'highpass', a: .05, d: .6, v: .3 }); noise({ f: 700, q: 1, a: .05, d: .6, v: .2 }); },
+    crane: () => { tone(70, { type: 'sawtooth', a: .3, d: 2.3, v: .06, slide: 110 }); noise({ f: 400, q: 2, a: .3, d: 2.3, v: .15 }); },
+    roar: () => {
+      if (!ctx) return;
+      noise({ f: 180, q: .7, a: .15, d: 3.2, v: .9, sweep: 420 });
+      noise({ f: 1400, q: .6, a: .2, d: 2.8, v: .35 });
+      tone(48, { type: 'sawtooth', a: .15, d: 3, v: .12, slide: 70 });
+    },
     step: () => noise({ f: 420, q: 1.2, d: .05, v: .07 }),
     spark: () => noise({ f: 6500, q: 3, d: .05, v: .18 }),
     sparkle: () => [1568, 2093, 2637].forEach((f, i) => tone(f, { t: i * .05, d: .2, v: .05 })),
@@ -89,12 +99,19 @@ const Sound = (() => {
     g.gain.setValueAtTime(.0001, ctx.currentTime);
     if (kind === 'garage') {
       fl.type = 'lowpass'; fl.frequency.value = 260;
-      g.gain.exponentialRampToValueAtTime(.18, ctx.currentTime + 1.5);
+      g.gain.exponentialRampToValueAtTime(.18, ctx.currentTime + .6);
       const o = ctx.createOscillator(); o.frequency.value = 58; const og = ctx.createGain(); og.gain.value = .018;
       o.connect(og); og.connect(ambG); o.start(); a.nodes.push(o);
+    } else if (kind === 'junk') {
+      fl.type = 'bandpass'; fl.frequency.value = 340; fl.Q.value = .7;
+      g.gain.exponentialRampToValueAtTime(.3, ctx.currentTime + .6);
+      const o = ctx.createOscillator(); o.frequency.value = 120; const og = ctx.createGain(); og.gain.value = .006;
+      o.connect(og); og.connect(ambG); o.start(); a.nodes.push(o);
+      const clang = () => { if (!a.alive) return; noise({ f: 1800 + Math.random() * 1500, q: 8, d: .3, v: .05, dest: ambG }); setTimeout(clang, 5000 + Math.random() * 8000); };
+      setTimeout(clang, 3000);
     } else {
       fl.type = 'bandpass'; fl.frequency.value = 520; fl.Q.value = .5;
-      g.gain.exponentialRampToValueAtTime(.32, ctx.currentTime + 1.5);
+      g.gain.exponentialRampToValueAtTime(.32, ctx.currentTime + .6);
       const lfo = ctx.createOscillator(); lfo.frequency.value = .07; const lg = ctx.createGain(); lg.gain.value = 260;
       lfo.connect(lg); lg.connect(fl.frequency); lfo.start(); a.nodes.push(lfo);
     }
@@ -114,7 +131,7 @@ const Sound = (() => {
       setTimeout(bird, 4000 + Math.random() * 7000);
     };
     setTimeout(cricket, 600);
-    if (kind !== 'garage') setTimeout(bird, 2500);
+    if (kind === 'forest') setTimeout(bird, 2500);
   }
   function stopAmb() {
     if (!amb) return;
@@ -164,7 +181,7 @@ const Sound = (() => {
   function startMusic() {
     if (!ctx || musicOn) return;
     musicOn = true; nextT = ctx.currentTime + .15; beat = 0;
-    musG.gain.cancelScheduledValues(ctx.currentTime); musG.gain.setValueAtTime(.0001, ctx.currentTime); musG.gain.exponentialRampToValueAtTime(.38, ctx.currentTime + 2);
+    musG.gain.cancelScheduledValues(ctx.currentTime); musG.gain.setValueAtTime(.0001, ctx.currentTime); musG.gain.exponentialRampToValueAtTime(.38, ctx.currentTime + 1);
     sched = setInterval(tick, 90);
   }
   function stopMusic() {

@@ -2,7 +2,7 @@
 
 A cozy, slightly gritty sci-fi point-and-click adventure. Crystal Lynx crash-lands her scout ship, the *Dandelion*, in the woods of an alien moon. The only mechanic for miles is Racket, a tall, grumpy, sarcastic raccoon who agrees to fix it mostly so she'll leave. Scavenge parts, earn scrap credits, shop a very sketchy parts marketplace, and slowly win him over.
 
-**Status: Phase 1 play-test build.**
+**Status: Phase 2 play-test build** (Phases 1 and 2 are playable).
 
 ## Play
 
@@ -28,14 +28,30 @@ It works on desktop (mouse and keyboard) and on tablets (touch, landscape or por
 - **Story beat:** after the first repair, a late-night noodle scene and a gift.
 - **Audio:** synthesized ambience, a gentle generative score, two radio stations once you fix the radio, and sound effects. Sound and music toggle separately.
 
+## What's in Phase 2
+
+- **New scenes:** Vex's Junkyard (floodlit scrap heaps, Big Bertha the crane, Vex's hubcap shack), the Woods Edge (past the crash site), and the garage roof.
+- **Scrapqueen Vex:** a magpie salvage dealer and Racket's old flying partner. On the first trip Racket comes along, and when Vex picks on Crystal he quietly sticks up for her.
+- **Second repair, the thrusters:**
+  - **Nozzle set:** under the Hauler-7 wreck. Get Big Bertha running: find her lever in Tire Mountain, then solve the breaker-box puzzle. Lift the wreck and cut the nozzles free with a torch.
+  - **Cutting torch:** Vex trades it for a gold hubcap buried in the shiny pile. Fuel comes from JunkNet (30 cr).
+  - **Heat-proof gasket:** cut at the workbench from a copper sheet (appliance heap) and ember-bark resin. The resin is melted off a tree at the woods edge with the torch and caught in Racket's old noodle cup.
+- **Junk to sell:** searchable piles hold funny junk with new JunkNet buyers, plus new listings.
+- **Mini-games:** Bolt Bin: The Sequel (nuts and washers), Tune the Tow Truck (timing), Untangle the Wiring (matching), Big Bertha's breaker box (lights-out) and Cut the Gasket (dot to dot). Shop chores pay credits the first time and can be replayed from the job board for a couple of credits.
+- **Story beats:** a test-fire where Racket finally laughs, and a quiet night on the roof where he almost tells you how he crashed. Friendship can reach tier 3.
+- **The Deep Woods tease:** the torch could cut through the fallen tree... tomorrow.
+
 ## Project layout
 
 ```
 index.html        page shell (HUD, scene, inventory tray, dialogue, modals, title)
 css/style.css     all styling and animation
 js/audio.js       WebAudio ambience, music and sound effects
-js/art.js         all artwork as hand-built SVG (scenes, characters, items)
-js/data.js        items, dialogue trees, banter, shop listings, jobs
+js/art.js         Phase 1 artwork as hand-built SVG (scenes, characters, items)
+js/art2.js        Phase 2 artwork (junkyard, Vex, woods edge, roof, new items)
+js/data.js        Phase 1 items, dialogue trees, banter, shop listings, jobs
+js/data2.js       Phase 2 items, dialogue (Vex, test-fire, roof), listings, jobs
+js/minigames.js   bolt sorting, tune-up, wires, breaker box, gasket cutting
 js/engine.js      state, scenes and hotspots, walking, dialogue runner, modals, saving
 ```
 
@@ -43,9 +59,9 @@ js/engine.js      state, scenes and hotspots, walking, dialogue runner, modals, 
 
 - **Dialogue** lives in `js/data.js`. A node is `{ lines, choices, go, end }`. `lines` are `[who, mood, text]`, where `who` is `'r'` (Racket), `'c'` (Crystal), `'n'` (narrator) or `'fx'` (run a function). A choice is `{ t, f, say, go, if }`, where `f` is the hidden friendship change. A node can also be a function `(G) => node` so it can react to state.
 - **Scenes and hotspots** live in `SCENES` in `js/engine.js`. Each hotspot has a hit box, a walk-to x, a draw function from `art.js`, an `act` handler and an optional `accepts` list of items.
-- **Racket's moods** in art are `grump`, `smirk`, `soft`, `shock` and `laugh`. Crystal's are `neutral`, `happy`, `worried`, `smug` and `surprised`.
+- **Racket's moods** in art are `grump`, `smirk`, `soft`, `shock` and `laugh`. Vex's are `smug`, `neutral`, `annoyed`, `shock` and `delight`. Crystal's are `neutral`, `happy`, `worried`, `smug` and `surprised`.
 
 ## Roadmap
 
-- **Phase 2:** the Junkyard (scrap piles, a grumpy scrap dealer, thruster parts, a cutting torch) and the Deep Woods (the torch clears a blocked path, critters, hidden parts, a rescue moment).
+- **Phase 3:** the Deep Woods (the torch clears the fallen tree, the yellow-eyed something, critters, hidden parts, a rescue moment) and the navigation repair, plus a new bolt-bin round.
 - **Later:** a canyon wreck and an abandoned station, a scanner that reveals hidden parts, the remaining repairs (thrusters, navigation, hull plating, engine core), and more friendship moments.

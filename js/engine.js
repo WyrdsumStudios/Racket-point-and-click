@@ -1,5 +1,6 @@
 /* Racket's Garage — engine.js
  * State, scenes, hotspots, walking, dialogue, inventory, modals, saving.
+ * Phase 1: crash site + garage + fuel cell. Phase 2: junkyard + woods edge + thrusters.
  */
 (() => {
   const SAVE_KEY = 'rackets-garage-save-v1';
@@ -7,15 +8,18 @@
   const $$ = (s, el = document) => [...el.querySelectorAll(s)];
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const val = (v, ...a) => (typeof v === 'function' ? v(...a) : v);
 
   // ---------------------------------------------------------------------------
   // STATE
   // ---------------------------------------------------------------------------
   const fresh = () => ({
-    v: 1, scene: 'crash', inv: ['datapad'], flags: {}, friend: 0, credits: 0,
-    parts: { casing: false, crystal: false, wiring: false }, repairs: { fuel: false },
-    jobs: { radio: 'hidden', bolts: 'hidden', scrap: 'hidden' }, sold: [], talked: {},
-    pos: { crash: 560, garage: 820 }, station: 0,
+    v: 2, scene: 'crash', inv: ['datapad'], flags: {}, friend: 0, credits: 0,
+    parts: { casing: false, crystal: false, wiring: false, nozzles: false, gasket: false },
+    repairs: { fuel: false, thrusters: false },
+    jobs: { radio: 'hidden', bolts: 'hidden', scrap: 'hidden', bolts2: 'hidden', tune: 'hidden', wires: 'hidden' },
+    sold: [], talked: {}, piles: { tires: 0, appliances: 0, shiny: 0 },
+    pos: { crash: 560, garage: 820, junkyard: 300, woods: 1250, roof: 800 }, station: 0,
   });
   let S = fresh();
   let sel = null;            // selected inventory item
@@ -33,12 +37,20 @@
       if (!raw) return null;
       const d = JSON.parse(raw);
       const f = fresh();
-      return { ...f, ...d, flags: { ...d.flags }, parts: { ...f.parts, ...d.parts }, repairs: { ...f.repairs, ...d.repairs }, jobs: { ...f.jobs, ...d.jobs }, pos: { ...f.pos, ...d.pos }, talked: { ...d.talked } };
+      return {
+        ...f, ...d, flags: { ...d.flags }, parts: { ...f.parts, ...d.parts }, repairs: { ...f.repairs, ...d.repairs },
+        jobs: { ...f.jobs, ...d.jobs }, pos: { ...f.pos, ...d.pos }, talked: { ...d.talked }, piles: { ...f.piles, ...d.piles }, sold: d.sold || [],
+      };
     } catch (e) { return null; }
+  }
+  // Bring older saves forward (Phase 1 saves keep working).
+  function migrate() {
+    if (S.flags.phase1) ['bolts2', 'tune', 'wires'].forEach((j) => { if (S.jobs[j] === 'hidden') S.jobs[j] = 'open'; });
+    S.v = 2;
   }
 
   // ---------------------------------------------------------------------------
-  // GAME API (used by data.js dialogue functions)
+  // GAME API (used by data*.js dialogue functions and minigames.js)
   // ---------------------------------------------------------------------------
   const TIER_NAMES = ['Unimpressed', 'Grudgingly tolerable', 'Growing on him', "Fond (he'd deny it)", 'Family'];
   const G = {
@@ -47,6 +59,12 @@
     has: (id) => S.inv.includes(id),
     give(id, quiet) {
       if (!S.inv.includes(id)) S.inv.push(id);
+      // a torch and its fuel snap together on their own
+      if (G.has('cutting_torch') && G.has('torch_fuel')) {
+        S.inv = S.inv.filter((i) => i !== 'torch_fuel');
+        S.flags.torchFueled = true;
+        setTimeout(() => say('c', 'The fuel canister clicks into the torch. FSSSHHH. Oh, that is a good sound.'), 900);
+      }
       if (!quiet) Sound.sfx('pickup');
       renderTray(id); save();
     },
@@ -59,62 +77,105 @@
     tier() { const f = S.friend; return f < 15 ? 0 : f < 35 ? 1 : f < 60 ? 2 : f < 85 ? 3 : 4; },
     rMood() { return ['grump', 'grump', 'smirk', 'soft', 'soft'][G.tier()]; },
     addCredits(n) { S.credits += n; Sound.sfx('coin'); floatText(`+${n} cr`); updateHud(); save(); },
-    introDone,
-    finishRadio,
-    returnItem,
-    nightScene,
-    phaseEnd,
+    introDone, finishRadio, returnItem, nightScene, phaseEnd,
+    vexIntroDone, tradeHubcap, fireThrusters, roofScene,
   };
   window.G = G;
 
   // ---------------------------------------------------------------------------
   // SCENES
   // ---------------------------------------------------------------------------
+  const F = () => S.flags;
   const pryOnBoard = () => !S.flags.pryTaken || S.flags.pryReturned;
   const mittsOnCouch = () => !S.flags.mittsTaken || S.flags.mittsReturned;
-  // During the late-night noodle scene Racket sits with you by the couch.
-  const rX = () => (S.flags.noodles && !S.flags.phase1 ? 150 : 1090);
+  const racketAtJunk = () => S.scene === 'junkyard' && !S.flags.racketLeftJunk;
+  // Racket's spot: the bench normally, the couch during noodle night, by the crane on the first junkyard trip.
+  const rX = () => (S.scene === 'junkyard' ? 600 : S.flags.noodles && !S.flags.phase1 ? 150 : 1090);
+  const VEX_X = 1395;
+  const BENCH_ITEMS = ['cell_casing', 'charge_crystal', 'wiring', 'thruster_nozzles', 'gasket', 'copper_sheet', 'ember_resin'];
 
   const SCENES = {
     garage: {
       name: "Racket's Garage", floor: 800, amb: 'garage',
       bg: () => Art.garageBg(), fg: () => Art.garageFg(),
+      entry: [1440, 1310],
       hs: [
         { id: 'window', label: 'Window', hit: [70, 140, 272, 148], walk: 240, draw: () => Art.garage.window(), act: actWindow },
-        { id: 'radio', label: () => (S.flags.radioFixed ? 'Radio' : 'Busted radio'), hit: [184, 250, 140, 94], walk: 250, accepts: ['spare_fuse'], draw: () => Art.garage.radio(S.flags.radioFixed), act: actRadio },
+        { id: 'radio', label: () => (F().radioFixed ? 'Radio' : 'Busted radio'), hit: [184, 250, 140, 94], walk: 250, accepts: ['spare_fuse'], draw: () => Art.garage.radio(F().radioFixed), act: actRadio },
         { id: 'rocket', label: 'Toy rocket', hit: [506, 96, 54, 58], walk: 540, draw: () => Art.garage.shelfRocket(), act: () => say('c', "A little toy rocket, carefully dusted. The only clean thing in this whole garage.") },
         { id: 'jobs', label: 'Job board', hit: [358, 194, 132, 154], walk: 430, draw: () => Art.garage.jobBoard(S), act: openJobs },
         { id: 'terminal', label: 'Computer terminal', hit: [488, 388, 152, 134], walk: 570, draw: () => Art.garage.terminal(S), act: openTerminal },
         { id: 'mug', label: 'Mug', hit: [640, 460, 44, 60], walk: 640, draw: () => Art.garage.mug(), act: actMug },
         { id: 'pegboard', label: () => (pryOnBoard() ? 'Pegboard (pry bar)' : 'Pegboard'), hit: [690, 172, 324, 240], walk: 900, draw: () => Art.garage.pegboard(S, pryOnBoard()), act: actPegboard },
-        { id: 'workbench', label: 'Workbench', hit: [680, 420, 258, 200], walk: 840, accepts: ['cell_casing', 'charge_crystal', 'wiring'], draw: () => Art.garage.workbench(S), act: openWorkbench },
-        { id: 'bolts', label: 'Bolt bin', hit: [940, 428, 78, 64], walk: 940, draw: () => Art.garage.boltBin(S.jobs.bolts === 'done'), act: actBolts },
-        { id: 'couch', label: () => (mittsOnCouch() && !S.flags.crystalTaken ? 'Couch (oven mitts?)' : 'Couch'), hit: [40, 550, 384, 180], walk: 250, draw: () => Art.garage.couch(S, mittsOnCouch()), act: actCouch },
-        { id: 'ship', label: 'The Dandelion', show: () => S.flags.shipTowed, hit: [1186, 360, 394, 290], walk: 1290, draw: () => Art.garage.bayShip(S), act: () => openShip() },
-        { id: 'racket', label: 'Racket', hit: () => [rX() - 68, 250, 140, 550], walk: () => (rX() > 600 ? 945 : 330), anyItem: true, draw: () => `<g transform="translate(${rX()},800)">${Art.racket(G.rMood())}</g>`, act: actRacket },
+        { id: 'workbench', label: 'Workbench', hit: [680, 420, 258, 200], walk: 840, accepts: BENCH_ITEMS, draw: () => Art.garage.workbench(S), act: openWorkbench },
+        { id: 'bolts', label: 'Bolt bin', hit: [940, 428, 78, 64], walk: 940, draw: () => Art.garage.boltBin(S.jobs.bolts === 'done' && (!F().phase1 || S.jobs.bolts2 === 'done')), act: actBolts },
+        { id: 'couch', label: () => (mittsOnCouch() && !F().crystalTaken ? 'Couch (oven mitts?)' : F().phase1 && !F().cupTaken ? 'Couch (noodle cups)' : 'Couch'), hit: [40, 550, 384, 180], walk: 250, draw: () => Art.garage.couch(S, mittsOnCouch()), act: actCouch },
+        { id: 'ship', label: 'The Dandelion', show: () => F().shipTowed, hit: [1186, 360, 394, 290], walk: 1290, draw: () => Art.garage.bayShip(S, G.tmp.testFire), act: () => openShip() },
+        { id: 'racket', label: 'Racket', hit: () => [rX() - 68, 250, 140, 550], walk: () => (rX() > 600 ? 945 : 330), anyItem: true, draw: () => `<g transform="translate(${rX()},800)">${Art.racket(G.tmp.testFire ? 'laugh' : G.rMood())}</g>`, act: actRacket },
         { id: 'exit', label: 'To the crash site', hit: [1440, 740, 150, 110], walk: 1470, draw: () => Art.garage.exit(), act: () => go('crash') },
       ],
-      onEnter() {
-        if (!S.flags.metRacket) setTimeout(() => dlg('intro'), 500);
-      },
+      onEnter() { if (!F().metRacket) setTimeout(() => dlg('intro'), 500); },
     },
     crash: {
       name: 'Crash Site', floor: 812, amb: 'forest',
       bg: () => Art.crashBg(S), fg: () => '',
+      entry: (from) => (from === 'woods' ? [60, 300] : [1440, 1250]),
       hs: [
+        { id: 'toWoods', label: 'To the woods edge', show: () => F().phase1, hit: [20, 380, 110, 110], walk: 130, draw: () => Art2.crashToWoods(), act: () => go('woods') },
         { id: 'critter', label: 'Fuzzy critter', hit: [356, 394, 80, 74], walk: 400, draw: () => Art.crash.critter(), act: actCritter },
-        { id: 'crystals', label: 'Glowing crystal vein', hit: [36, 500, 170, 212], walk: 200, accepts: ['oven_mitts'], draw: () => Art.crash.crystals(!S.flags.crystalTaken), act: actCrystals },
-        { id: 'locker', label: 'Emergency locker', hit: [184, 596, 120, 116], walk: 250, draw: () => Art.crash.locker(!S.flags.fuseTaken), act: actLocker },
-        { id: 'ship', label: 'The Dandelion', show: () => !S.flags.shipTowed, hit: [480, 410, 600, 290], walk: 720, draw: () => Art.crash.ship(), act: () => openShip(true) },
-        { id: 'tracks', label: 'Tow tracks', show: () => S.flags.shipTowed, hit: [560, 650, 420, 90], walk: 760, act: () => say('c', "Tow tracks, heading for the garage. He hauled the Dandelion off with a truck held together by duct tape and spite.") },
-        { id: 'scrap', label: 'Bent hull panel', show: () => !S.flags.scrapTaken, hit: [304, 700, 130, 64], walk: 372, draw: () => Art.crash.hullScrap(), act: actScrap },
-        { id: 'debris', label: 'Wreckage', hit: [1040, 596, 220, 114], walk: 1110, accepts: ['pry_bar'], draw: () => Art.crash.debris(!S.flags.casingTaken), act: actDebris },
-        { id: 'antenna', label: 'Folded antenna', show: () => !S.flags.antennaTaken, hit: [1256, 640, 110, 92], walk: 1300, draw: () => Art.crash.antenna(), act: actAntenna },
-        { id: 'exit', label: () => (S.flags.metRacket ? "To Racket's garage" : 'Light through the trees'), hit: [1420, 400, 180, 290], walk: 1470, draw: () => Art.crash.exit(), act: actCrashExit },
+        { id: 'crystals', label: 'Glowing crystal vein', hit: [36, 500, 170, 212], walk: 200, accepts: ['oven_mitts'], draw: () => Art.crash.crystals(!F().crystalTaken), act: actCrystals },
+        { id: 'locker', label: 'Emergency locker', hit: [184, 596, 120, 116], walk: 250, draw: () => Art.crash.locker(!F().fuseTaken), act: actLocker },
+        { id: 'ship', label: 'The Dandelion', show: () => !F().shipTowed, hit: [480, 410, 600, 290], walk: 720, draw: () => Art.crash.ship(), act: () => openShip(true) },
+        { id: 'tracks', label: 'Tow tracks', show: () => F().shipTowed, hit: [560, 650, 420, 90], walk: 760, act: () => say('c', "Tow tracks, heading for the garage. He hauled the Dandelion off with a truck held together by duct tape and spite.") },
+        { id: 'scrap', label: 'Bent hull panel', show: () => !F().scrapTaken, hit: [304, 700, 130, 64], walk: 372, draw: () => Art.crash.hullScrap(), act: actScrap },
+        { id: 'debris', label: 'Wreckage', hit: [1040, 596, 220, 114], walk: 1110, accepts: ['pry_bar'], draw: () => Art.crash.debris(!F().casingTaken), act: actDebris },
+        { id: 'antenna', label: 'Folded antenna', show: () => !F().antennaTaken, hit: [1256, 640, 110, 92], walk: 1300, draw: () => Art.crash.antenna(), act: actAntenna },
+        { id: 'exit', label: () => (F().metRacket ? "To Racket's garage" : 'Light through the trees'), hit: [1420, 400, 180, 290], walk: 1470, draw: () => Art.crash.exit(), act: actCrashExit },
       ],
       onEnter() {},
     },
+    junkyard: {
+      name: "Vex's Junkyard", floor: 812, amb: 'junk',
+      bg: () => Art2.junkBg(), fg: () => Art2.junkFg(),
+      entry: [60, 300],
+      hs: [
+        { id: 'tires', label: 'Tire Mountain', hit: [20, 520, 170, 200], walk: 170, draw: () => Art2.junk.tires(pileLeft('tires')), act: () => actPile('tires') },
+        { id: 'crane', label: () => (F().leverIn ? 'Crane cab (lever)' : 'Crane cab'), hit: [196, 470, 152, 170], walk: 270, accepts: ['crane_lever'], draw: () => Art2.junk.crane(S), act: actCraneCab },
+        { id: 'breaker', label: 'Breaker box', hit: [368, 548, 76, 100], walk: 410, draw: () => Art2.junk.breaker(S), act: actBreaker },
+        { id: 'shiny', label: 'Shiny pile', hit: [450, 610, 160, 110], walk: 520, draw: () => Art2.junk.shiny(pileLeft('shiny')), act: () => actPile('shiny') },
+        { id: 'wreck', label: 'Hauler-7 wreck', hit: () => (F().craneLifted ? [636, 340, 330, 180] : [636, 520, 330, 190]), walk: 800, draw: () => Art2.junk.wreck(S), act: actWreck },
+        { id: 'nozzles', label: 'Thruster nozzles', show: () => F().craneLifted && !F().nozzlesTaken, hit: [700, 630, 200, 86], walk: 800, accepts: ['cutting_torch'], act: actNozzles },
+        { id: 'appliances', label: 'Appliance heap', hit: [980, 500, 210, 220], walk: 1080, draw: () => Art2.junk.appliances(pileLeft('appliances')), act: () => actPile('appliances') },
+        { id: 'booth', label: 'Hubcap wall', hit: [1214, 350, 150, 100], walk: 1180, draw: () => Art2.junk.booth(S), act: actHubcapWall },
+        { id: 'vex', label: 'Scrapqueen Vex', hit: [1330, 250, 130, 560], walk: 1205, anyItem: true, draw: () => `<g transform="translate(${VEX_X},806)">${Art2.vex(F().craneLifted ? 'smug' : 'neutral')}</g>`, act: actVex },
+        { id: 'racketJ', label: 'Racket', show: racketAtJunk, hit: [532, 250, 140, 550], walk: 480, draw: () => `<g transform="translate(600,806)">${Art.racket('grump')}</g>`, act: () => say('r', "Don't look at me. This is Vex's circus.") },
+        { id: 'exit', label: "Back to Racket's garage", hit: [20, 740, 150, 110], walk: 110, draw: () => Art2.junk.exit(), act: () => go('garage') },
+      ],
+      onEnter() { if (!F().vexMet) setTimeout(() => dlg('vexIntro'), 500); },
+    },
+    woods: {
+      name: 'Woods Edge', floor: 812, amb: 'forest',
+      bg: () => Art2.woodsBg(), fg: () => '',
+      entry: [1440, 1250],
+      hs: [
+        { id: 'ember', label: 'Ember-bark tree', hit: [100, 380, 220, 330], walk: 300, accepts: ['cutting_torch', 'noodle_cup'], draw: () => Art2.woods.ember(S), act: actEmber },
+        { id: 'log', label: 'Fallen tree', hit: [420, 560, 840, 160], walk: 820, accepts: ['cutting_torch'], draw: () => Art2.woods.log(S), act: actLog },
+        { id: 'path', label: 'Dark path', hit: [740, 440, 160, 110], walk: 820, act: () => say('c', 'Two yellow eyes blink at me from the dark. Something growls. I wave. It growls again, but... friendlier?') },
+        { id: 'critter', label: 'Fuzzy critter', hit: [1006, 518, 70, 70], walk: 1040, draw: () => Art2.woods.critter(), act: actWoodsCritter },
+        { id: 'flowers', label: 'Bell flowers', hit: [1320, 700, 170, 110], walk: 1400, draw: () => Art2.woods.flowers(), act: () => { Sound.sfx('sparkle'); say('c', 'Bell-shaped flowers. When the wind blows, they actually chime. I love this moon.'); } },
+        { id: 'exit', label: 'Back to the crash site', hit: [1440, 740, 150, 110], walk: 1470, draw: () => Art2.woods.exit(), act: () => go('crash') },
+      ],
+      onEnter() {
+        if (!F().woodsSeen) { F().woodsSeen = true; save(); setTimeout(() => say('c', "The edge of the Deep Woods. It's darker in there. And it's... humming?"), 300); }
+      },
+    },
+    roof: {
+      name: 'Garage Roof', floor: 0, amb: 'forest', noCrystal: true,
+      bg: () => Art2.roof(S, G.rMood(), 'neutral'), fg: () => '',
+      entry: [800, 800], hs: [], onEnter() {},
+    },
   };
+  const pileLeft = (id) => DATA.piles[id].finds.length - S.piles[id];
 
   // ---------------------------------------------------------------------------
   // RENDERING
@@ -125,27 +186,38 @@
     let h = sc.bg();
     for (const hs of sc.hs) {
       if (hs.show && !hs.show()) continue;
-      const [x, y, w, hh] = typeof hs.hit === 'function' ? hs.hit() : hs.hit;
+      const [x, y, w, hh] = val(hs.hit);
       h += `<g data-hs="${hs.id}" class="hs">${hs.draw ? hs.draw() : ''}<rect class="hit" x="${x}" y="${y}" width="${w}" height="${hh}" rx="18"/></g>`;
     }
-    const cx = S.pos[S.scene];
-    h += `<g id="crystal" transform="translate(${cx},${sc.floor}) scale(.94)" pointer-events="none"><g class="c-flip" transform="scale(${G.tmp.face || 1},1)"><g class="c-bob">${Art.crystal(G.tmp.cMood || 'neutral')}</g></g></g>`;
+    if (!sc.noCrystal) {
+      const cx = S.pos[S.scene];
+      h += `<g id="crystal" transform="translate(${cx},${sc.floor}) scale(.94)" pointer-events="none"><g class="c-flip" transform="scale(${G.tmp.face || 1},1)"><g class="c-bob">${Art.crystal(G.tmp.cMood || 'neutral')}</g></g></g>`;
+    }
     h += sc.fg() + Art.overlays();
     sceneEl.innerHTML = h;
   }
   function refresh() { render(); updateHud(); renderTray(); save(); }
 
   function objective() {
-    const F = S.flags;
-    if (!F.sawDiag) return "Check the ship's diagnostics.";
-    if (!F.metRacket) return 'Find help. There\'s a light through the trees.';
+    const f = S.flags;
+    if (!f.sawDiag) return "Check the ship's diagnostics.";
+    if (!f.metRacket) return 'Find help. There\'s a light through the trees.';
     if (!S.repairs.fuel) {
       const have = DATA.parts.filter((p) => S.parts[p.key] || G.has(p.item)).length;
       if (have === 3) return 'Assemble the fuel cell at the workbench.';
       return `Fix the fuel cell: casing, charge crystal, wiring (${have}/3 found).`;
     }
-    if (!F.phase1) return 'Talk to Racket.';
-    return 'Phase 1 complete! Thrusters and the Junkyard are next.';
+    if (!f.phase1) return 'Talk to Racket.';
+    if (!S.repairs.thrusters) {
+      if (!f.vexMet) return 'Head to the Junkyard. Open the map.';
+      if (!f.craneLifted) return `Get Vex's crane running: lever ${f.leverIn ? '✔' : '✗'}, power ${f.cranePower ? '✔' : '✗'}.`;
+      const noz = S.parts.nozzles || G.has('thruster_nozzles'), gas = S.parts.gasket || G.has('gasket');
+      const n = (noz ? 1 : 0) + (f.torchFueled || noz ? 1 : 0) + (gas ? 1 : 0);
+      if (noz && gas) return 'Fit the thrusters at the workbench.';
+      return `Fix the thrusters: nozzle set, cutting torch, heat-proof gasket (${n}/3).`;
+    }
+    if (!f.phase2) return 'Enjoy the view.';
+    return 'Phase 2 complete! The Deep Woods are next.';
   }
   function updateHud() {
     $('#loc').textContent = SCENES[S.scene].name;
@@ -157,11 +229,12 @@
 
   // ---------- inventory tray ----------
   const DEFAULT_DESC = 'Tap an item to inspect it. With an item selected, tap something in the scene to use it.';
+  const itemName = (id) => val(DATA.items[id].name, G);
   function itemDesc(id) {
     const it = DATA.items[id];
     if (!it) return '';
-    if (S.flags.metRacket && it.r) return { who: 'Racket says', text: it.r };
-    return { who: 'Crystal thinks', text: it.c || it.r };
+    if (S.flags.metRacket && it.r) return { who: 'Racket says', text: val(it.r, G) };
+    return { who: 'Crystal thinks', text: val(it.c || it.r, G) };
   }
   function renderTray(flash) {
     const inv = $('#inv');
@@ -170,13 +243,13 @@
     for (let i = 0; i < slots; i++) {
       const id = S.inv[i];
       h += id
-        ? `<button class="slot${sel === id ? ' sel' : ''}${flash === id ? ' flash' : ''}" data-item="${id}" aria-label="${esc(DATA.items[id].name)}">${Art.icon(id)}</button>`
+        ? `<button class="slot${sel === id ? ' sel' : ''}${flash === id ? ' flash' : ''}" data-item="${id}" aria-label="${esc(itemName(id))}">${Art.icon(id)}</button>`
         : `<div class="slot empty"></div>`;
     }
     inv.innerHTML = h;
     const d = sel ? itemDesc(sel) : null;
     $('#desc').innerHTML = d
-      ? `<div class="desc-name">${esc(DATA.items[sel].name)}</div><div class="desc-text"><span class="desc-who">${d.who}:</span> ${esc(d.text)}</div><div class="desc-hint">Now tap something in the scene to use it, or tap the item again to put it away.</div>`
+      ? `<div class="desc-name">${esc(itemName(sel))}</div><div class="desc-text"><span class="desc-who">${d.who}:</span> ${esc(d.text)}</div><div class="desc-hint">Now tap something in the scene to use it, or tap the item again to put it away.</div>`
       : `<div class="desc-text muted">${DEFAULT_DESC}</div>`;
     $('#stage').classList.toggle('using', !!sel);
   }
@@ -186,14 +259,15 @@
   // BUBBLES, TOASTS, CARDS
   // ---------------------------------------------------------------------------
   const bubbleTimers = {};
+  const NAMES = { r: 'Racket', v: 'Vex' };
   function say(who, text, delay = 0) {
     const run = () => {
       const stage = $('#bubbles');
       $$(`.bubble.${who}`, stage).forEach((b) => b.remove());
-      const pos = who === 'r' ? [rX(), 240] : who === 'c' ? [S.pos[S.scene], 330] : [800, 870];
+      const pos = who === 'r' ? [rX(), 240] : who === 'v' ? [VEX_X, 230] : who === 'c' ? [S.pos[S.scene], 330] : [800, 870];
       const b = document.createElement('div');
       b.className = `bubble ${who}`;
-      b.innerHTML = `${who === 'r' ? '<span class="b-name">Racket</span>' : ''}${esc(text)}`;
+      b.innerHTML = `${NAMES[who] ? `<span class="b-name">${NAMES[who]}</span>` : ''}${esc(text)}`;
       b.style.top = pos[1] / 9 + '%';
       b.style.left = pos[0] / 16 + '%';
       stage.appendChild(b);
@@ -202,13 +276,15 @@
       const left = clamp(ax, bw / 2 + 8, sw - bw / 2 - 8);
       b.style.left = left + 'px';
       b.style.setProperty('--tail', clamp(bw / 2 + (ax - left), 18, bw - 18) + 'px');
-      Sound.sfx(who === 'r' ? 'blipR' : who === 'c' ? 'blipC' : 'blipN');
+      Sound.sfx(who === 'r' ? 'blipR' : who === 'c' ? 'blipC' : who === 'v' ? 'blipV' : 'blipN');
       const dur = 2400 + text.length * 48;
       clearTimeout(bubbleTimers[who]);
       bubbleTimers[who] = setTimeout(() => { b.classList.add('out'); setTimeout(() => b.remove(), 300); }, dur);
       b.addEventListener('click', () => b.remove());
     };
-    if (delay) setTimeout(run, delay); else run();
+    // a delayed line is dropped if the player has moved to another scene meanwhile
+    const scene = S.scene;
+    if (delay) setTimeout(() => { if (S.scene === scene) run(); }, delay); else run();
     return 2400 + text.length * 48;
   }
   function floatText(t) {
@@ -225,7 +301,6 @@
     $('#bubbles').appendChild(el);
     setTimeout(() => el.remove(), 1800);
   }
-
   function card(text, cb, opts = {}) {
     const el = $('#card');
     el.innerHTML = `<div class="card-inner">${opts.title ? `<h2>${esc(opts.title)}</h2>` : ''}<p>${esc(text)}</p>${opts.html || ''}<div class="card-hint">${opts.noTap ? '' : 'Tap to continue'}</div></div>`;
@@ -235,18 +310,18 @@
       el.classList.remove('show');
       setTimeout(() => { el.classList.add('hidden'); cb && cb(); }, 450);
     };
-    if (!opts.noTap) {
-      setTimeout(() => el.addEventListener('click', close, { once: true }), 350);
-    }
+    if (!opts.noTap) setTimeout(() => el.addEventListener('click', close, { once: true }), 350);
     return close;
   }
+  function shake() { const s = $('#stage'); s.classList.remove('shake'); void s.offsetWidth; s.classList.add('shake'); }
 
   // ---------------------------------------------------------------------------
   // WALKING
   // ---------------------------------------------------------------------------
   function walkTo(x, cb) {
     const sc = SCENES[S.scene];
-    x = clamp(x, 90, 1520);
+    if (sc.noCrystal) { cb && cb(); return; }
+    x = clamp(x, 60, 1540);
     const from = S.pos[S.scene], dist = Math.abs(x - from);
     if (dist < 10) { cb && cb(); return; }
     G.tmp.face = x > from ? 1 : -1;
@@ -277,8 +352,8 @@
     const r = sceneEl.getBoundingClientRect();
     return [(e.clientX - r.left) / r.width * 1600, (e.clientY - r.top) / r.height * 900];
   }
-  function findHs(id) { return SCENES[S.scene].hs.find((h) => h.id === id); }
-  const label = (hs) => (typeof hs.label === 'function' ? hs.label() : hs.label);
+  const findHs = (id) => SCENES[S.scene].hs.find((h) => h.id === id);
+  const label = (hs) => val(hs.label);
 
   sceneEl.addEventListener('click', (e) => {
     lastInput = Date.now();
@@ -294,7 +369,7 @@
     const g = e.target.closest('[data-hs]');
     if (!g || isBlocked()) { tip.classList.remove('show'); return; }
     const hs = findHs(g.dataset.hs);
-    tip.textContent = sel ? `Use ${DATA.items[sel].name} on ${label(hs)}` : label(hs);
+    tip.textContent = sel ? `Use ${itemName(sel)} on ${label(hs)}` : label(hs);
     const r = $('#stage').getBoundingClientRect();
     tip.style.left = (e.clientX - r.left) + 'px';
     tip.style.top = (e.clientY - r.top) + 'px';
@@ -315,7 +390,7 @@
         setSel(null);
       } else hs.act();
     };
-    const wx = typeof hs.walk === 'function' ? hs.walk() : hs.walk;
+    const wx = val(hs.walk);
     if (wx != null) walkTo(wx, doIt); else doIt();
   }
 
@@ -329,9 +404,11 @@
     stage.classList.add('fade');
     busy = true;
     setTimeout(() => {
+      const from = S.scene;
       S.scene = scene;
-      S.pos[scene] = 1440;
-      G.tmp.face = -1;
+      const [startX, walkX] = val(SCENES[scene].entry, from);
+      S.pos[scene] = startX;
+      G.tmp.face = walkX >= startX ? 1 : -1;
       setSel(null);
       $('#bubbles').innerHTML = '';
       refresh();
@@ -339,9 +416,17 @@
       stage.classList.remove('fade');
       setTimeout(() => {
         busy = false;
-        walkTo(scene === 'garage' ? 1310 : 1250, () => SCENES[scene].onEnter());
+        walkTo(walkX, () => SCENES[scene].onEnter());
       }, 350);
     }, 450);
+  }
+  function travel(id) {
+    if (id === 'junkyard' && !F().vexMet) {
+      if (S.scene === 'garage') { Dlg.start({ ...DATA.dlg.toJunkyard, end: () => go('junkyard') }); return; }
+      card("Racket meets you at the junkyard gate in his tow truck, grumbling before you even get out.", () => go('junkyard'));
+      return;
+    }
+    go(id);
   }
 
   // ---------------------------------------------------------------------------
@@ -349,14 +434,14 @@
   // ---------------------------------------------------------------------------
   function actWindow() {
     say('c', 'Two moons tonight. The crash was almost worth the view.');
-    if (S.flags.metRacket) say('r', G.tier() >= 2 ? "...Yeah. It's a good view." : "It's geology. Don't get sentimental.", 2600);
+    if (F().metRacket) say('r', G.tier() >= 2 ? "...Yeah. It's a good view." : "It's geology. Don't get sentimental.", 2600);
   }
   function actMug() {
     say('c', "WORLD'S OKAYEST MECHANIC. The handle's been glued back on. Twice.");
-    if (S.flags.metRacket && !S.flags.mugJoke) { S.flags.mugJoke = true; say('r', 'Three times, now. Thanks to somebody.', 3000); }
+    if (F().metRacket && !F().mugJoke) { F().mugJoke = true; say('r', 'Three times, now. Thanks to somebody.', 3000); }
   }
   function actRadio() {
-    if (S.flags.radioFixed) {
+    if (F().radioFixed) {
       const next = ((S.station || 0) + 1) % (Sound.stations.length + 1);
       S.station = next;
       if (next < Sound.stations.length) {
@@ -371,16 +456,16 @@
       return;
     }
     if (G.has('spare_fuse')) {
-      if (!S.flags.metRacket) { say('c', "Somebody's radio. I shouldn't mess with it without asking."); return; }
+      if (!F().metRacket) { say('c', "Somebody's radio. I shouldn't mess with it without asking."); return; }
       G.take('spare_fuse');
       dlg('radioFix');
       return;
     }
     say('c', 'Just static. And something that might be a very sad trombone.');
-    if (S.flags.metRacket) say('r', "It's busted. Needs a fuse. Like my spirit needs a vacation.", 2600);
+    if (F().metRacket) say('r', "It's busted. Needs a fuse. Like my spirit needs a vacation.", 2600);
   }
   function finishRadio() {
-    S.flags.radioFixed = true;
+    F().radioFixed = true;
     S.jobs.radio = 'done';
     S.station = 0;
     Sound.setStation(0);
@@ -389,10 +474,10 @@
     refresh();
   }
   function actPegboard() {
-    if (!S.flags.metRacket) { say('c', "Lots of tools. Not mine, though."); return; }
+    if (!F().metRacket) { say('c', "Lots of tools. Not mine, though."); return; }
     if (pryOnBoard()) {
-      if (S.flags.casingTaken) { say('c', "I'm done with the pry bar. It looks happy back on its hook."); return; }
-      S.flags.pryTaken = true; S.flags.pryReturned = false;
+      if (F().casingTaken) { say('c', "I'm done with the pry bar. It looks happy back on its hook."); return; }
+      F().pryTaken = true; F().pryReturned = false;
       G.give('pry_bar');
       say('c', 'Mind if I borrow this?');
       say('r', G.tier() >= 2 ? 'Go ahead, lynx. Bring it back straight.' : 'Bring it back straight.', 1500);
@@ -402,26 +487,35 @@
     say('c', 'A chalk outline where the pry bar goes. He drew an outline. Of course he did.');
   }
   function actCouch() {
-    if (mittsOnCouch() && !S.flags.crystalTaken && S.flags.metRacket) {
-      S.flags.mittsTaken = true; S.flags.mittsReturned = false;
+    if (mittsOnCouch() && !F().crystalTaken && F().metRacket) {
+      F().mittsTaken = true; F().mittsReturned = false;
       G.give('oven_mitts');
       say('c', "Oven mitts. On the couch. I'm not going to ask.");
       say('r', "Don't ask.", 2200);
       refresh();
       return;
     }
-    if (S.flags.noodles) { say('c', 'Two empty noodle cups, side by side. Neither of us threw ours out yet.'); return; }
+    if (F().phase1 && !F().cupTaken) {
+      F().cupTaken = true;
+      G.give('noodle_cup');
+      say('c', "One of our noodle cups from the other night. Could be useful for... something.");
+      say('r', "That's my cup. ...Keep it. Don't make it weird.", 2600);
+      refresh();
+      return;
+    }
+    if (F().noodles) { say('c', F().cupTaken ? 'His noodle cup, still on the arm of the couch. He kept it. Of course he did.' : 'Two empty noodle cups, side by side. Neither of us threw ours out yet.'); return; }
     say('c', 'The couch sags in a very raccoon-shaped way. Weirdly comfy.');
   }
   function actBolts() {
-    if (!S.flags.metRacket) { say('c', 'A bin of bolts. And... a sock?'); return; }
-    if (S.jobs.bolts === 'done') { say('c', "Perfectly sorted. He pretended he wasn't impressed."); return; }
-    openBoltGame();
+    if (!F().metRacket) { say('c', 'A bin of bolts. And... a sock?'); return; }
+    if (S.jobs.bolts !== 'done') { playJob('bolts'); return; }
+    if (F().phase1 && S.jobs.bolts2 !== 'done') { playJob('bolts2'); return; }
+    playJob(F().phase1 ? 'bolts2' : 'bolts');
   }
   function actRacket(item) {
     if (item) {
-      if (item === 'pry_bar' && S.flags.casingTaken) { dlg('retPry'); return; }
-      if (item === 'oven_mitts' && S.flags.crystalTaken) { dlg('retMitts'); return; }
+      if (item === 'pry_bar' && F().casingTaken) { dlg('retPry'); return; }
+      if (item === 'oven_mitts' && F().crystalTaken) { dlg('retMitts'); return; }
       say('r', DATA.giveRacket[item] || 'What am I supposed to do with that?');
       return;
     }
@@ -430,8 +524,8 @@
   }
   function returnItem(id) {
     G.take(id);
-    if (id === 'pry_bar') { S.flags.pryReturned = true; G.friend(4); }
-    if (id === 'oven_mitts') { S.flags.mittsReturned = true; G.friend(3); }
+    if (id === 'pry_bar') { F().pryReturned = true; G.friend(4); }
+    if (id === 'oven_mitts') { F().mittsReturned = true; G.friend(3); }
     refresh();
   }
 
@@ -446,9 +540,9 @@
     save();
   }
   function actCrystals() {
-    if (S.flags.crystalTaken) { say('c', 'The vein still hums, but I took the only piece that broke loose.'); return; }
+    if (F().crystalTaken) { say('c', 'The vein still hums, but I took the only piece that broke loose.'); return; }
     if (G.has('oven_mitts')) {
-      S.flags.crystalTaken = true;
+      F().crystalTaken = true;
       Sound.sfx('sparkle');
       G.give('charge_crystal');
       say('c', "Got it! A raw charge crystal. It's humming, like it knows something.");
@@ -459,61 +553,214 @@
     shake();
     G.tmp.cMood = 'surprised'; render();
     setTimeout(() => { G.tmp.cMood = null; render(); }, 1400);
-    say('c', S.flags.metRacket ? "OW! Hot! Stupidly hot! ...Mitts. He said mitts." : "OW! Hot! I'll need something heat-proof to grab that.");
+    say('c', F().metRacket ? "OW! Hot! Stupidly hot! ...Mitts. He said mitts." : "OW! Hot! I'll need something heat-proof to grab that.");
   }
   function actLocker() {
-    if (S.flags.fuseTaken) { say('c', "Just my ration bars, which have reached a new state of matter. They can stay."); return; }
-    S.flags.fuseTaken = true;
+    if (F().fuseTaken) { say('c', "Just my ration bars, which have reached a new state of matter. They can stay."); return; }
+    F().fuseTaken = true;
     G.give('spare_fuse');
     say('c', 'My emergency locker! One spare ship-grade fuse... and ration bars that are now a paste.');
     refresh();
   }
   function actScrap() {
-    S.flags.scrapTaken = true;
+    F().scrapTaken = true;
     G.give('hull_scrap');
     say('c', "A chunk of hull plating. Can't fix it, but somebody out there buys scrap, right?");
     refresh();
   }
   function actAntenna() {
-    S.flags.antennaTaken = true;
+    F().antennaTaken = true;
     G.give('antenna');
     say('c', 'My comm antenna, folded like a lawn chair. Sorry, buddy.');
     refresh();
   }
   function actDebris() {
-    if (S.flags.casingTaken) { say('c', 'Just a sad, bent hull plate now.'); return; }
+    if (F().casingTaken) { say('c', 'Just a sad, bent hull plate now.'); return; }
     if (G.has('pry_bar')) {
       Sound.sfx('clank');
       shake();
       setTimeout(() => {
         Sound.sfx('clank');
-        S.flags.casingTaken = true;
+        F().casingTaken = true;
         G.give('cell_casing');
         say('c', 'Hnnngh... got it! The fuel cell casing. Dented, but the seals look good.');
         refresh();
       }, 500);
       return;
     }
-    say('c', S.flags.metRacket
+    say('c', F().metRacket
       ? "Something's glinting under that hull plate. Way too heavy to lift by paw. ...His pry bar would do it."
       : "Something's glinting under that hull plate. Way too heavy to lift by paw. I need something to pry with.");
   }
   function actCrashExit() {
-    if (!S.flags.sawDiag) { say('c', 'Diagnostics first. Panic second.'); return; }
+    if (!F().sawDiag) { say('c', 'Diagnostics first. Panic second.'); return; }
     go('garage');
   }
-  function shake() { const s = $('#stage'); s.classList.remove('shake'); void s.offsetWidth; s.classList.add('shake'); }
+
+  // ---------------------------------------------------------------------------
+  // HOTSPOT ACTIONS — JUNKYARD
+  // ---------------------------------------------------------------------------
+  const FOUND_LINES = {
+    crane_lever: "A red lever handle, snapped clean off. That has to be from the crane!",
+    copper_sheet: "A sheet of copper from inside an old fridge. Soft, heat-proof... gasket material!",
+    gilded_hubcap: "Ooh. A gold-plated hubcap. Vex is going to lose her mind.",
+  };
+  function actPile(id) {
+    const P = DATA.piles[id], i = S.piles[id];
+    if (racketAtJunk()) { say('c', "Let's talk to the magpie first."); return; }
+    if (i >= P.finds.length) { say('c', P.empty); return; }
+    S.piles[id] = i + 1;
+    Sound.sfx('rummage');
+    shake();
+    const item = P.finds[i];
+    setTimeout(() => {
+      if (!item) { say('c', P.nothing); refresh(); return; }
+      G.give(item);
+      say('c', FOUND_LINES[item] || `Found: ${itemName(item)}. ${pickLine()}`);
+      refresh();
+    }, 450);
+  }
+  const pickLine = () => ['Junk. But sellable junk.', 'Somebody on JunkNet will want this.', "One person's trash is... still trash. But sellable."][Math.random() * 3 | 0];
+  function actCraneCab(item) {
+    if (racketAtJunk()) { say('c', "Let's talk to the magpie first."); return; }
+    if (!F().leverIn) {
+      if (item === 'crane_lever' || G.has('crane_lever')) {
+        G.take('crane_lever'); F().leverIn = true;
+        Sound.sfx('clank');
+        say('c', "Click. Bertha's lever is back where it belongs.");
+        if (!F().cranePower) say('v', "Now the breakers, kid! Box on her base!", 2200);
+        refresh();
+        return;
+      }
+      say('c', "The control lever's snapped off. Just a sad little stub. The handle has to be around here somewhere.");
+      return;
+    }
+    if (!F().cranePower) { Sound.sfx('error'); say('c', "Lever's in. I pull it and... nothing. Not even a groan. No power."); return; }
+    if (F().craneLifted) { say('c', "Big Bertha's holding the wreck up. Good girl."); return; }
+    liftWreck();
+  }
+  function liftWreck() {
+    busy = true;
+    Sound.sfx('crane');
+    say('c', 'Here goes... PULL!');
+    const w = $('.wreck-lift', sceneEl), c = $('.cable', sceneEl);
+    requestAnimationFrame(() => { w && w.classList.add('up'); c && c.classList.add('up'); });
+    setTimeout(() => Sound.sfx('clank'), 900);
+    setTimeout(() => Sound.sfx('clank'), 1800);
+    setTimeout(() => {
+      F().craneLifted = true;
+      busy = false;
+      refresh();
+      say('v', 'SHE LIVES! BERTHA LIVES! Oh, I could kiss you. I won\'t. But I could.');
+      say('c', "There! Under the wreck, a pair of copper thruster nozzles. They're welded to the frame, though.", 3600);
+    }, 2800);
+  }
+  function actBreaker() {
+    if (racketAtJunk()) { say('c', "Let's talk to the magpie first."); return; }
+    if (F().cranePower) { say('c', 'All green. Big Bertha has power.'); return; }
+    Mini.breakers(() => {
+      F().cranePower = true;
+      Sound.sfx('crane');
+      refresh();
+      say('c', 'Every breaker green! I can hear Bertha humming.');
+      say('v', F().leverIn ? "Power's on! Now pull her lever!" : "Power! Now she just needs her lever back!", 2400);
+    });
+  }
+  function actWreck() {
+    if (F().craneLifted) { say('c', F().nozzlesTaken ? 'Bertha is still holding the wreck up. Show-off.' : 'Bertha is holding the wreck up. The nozzles are right underneath.'); return; }
+    say('c', "The Hauler-7 wreck. Underneath, I can just see a gleam of copper. Way, way too heavy to lift.");
+  }
+  function actNozzles() {
+    if (!F().torchGot) { say('c', "They're welded to the wreck's frame. I need something to cut them free."); return; }
+    if (!F().torchFueled) { Sound.sfx('error'); say('c', 'Click... click. The torch is empty. No fuel.'); return; }
+    busy = true;
+    sceneEl.insertAdjacentHTML('beforeend', Art2.junk.cutting());
+    Sound.sfx('torch'); setTimeout(() => Sound.sfx('torch'), 700); setTimeout(() => Sound.sfx('torch'), 1400);
+    setTimeout(() => {
+      busy = false;
+      F().nozzlesTaken = true;
+      G.give('thruster_nozzles');
+      refresh();
+      say('c', 'Got them! Twin thruster nozzles, barely a scratch.');
+      say('v', "Careful with those— oh. You're actually good at that. Annoying.", 2600);
+    }, 2100);
+  }
+  function actHubcapWall() {
+    say('c', F().torchGot ? 'The hubcap wall, complete. The gold one in the middle practically glows. Vex keeps looking at it.' : 'Dozens of hubcaps, polished to a shine. There is one empty gap, bottom row. It looks... sad.');
+  }
+  function actVex(item) {
+    if (!F().vexMet) { dlg('vexIntro'); return; }
+    if (item) {
+      if (item === 'gilded_hubcap' && !F().torchGot) { dlg('vexTrade'); return; }
+      say('v', DATA.giveVex[item] || "I don't buy in person. JunkNet. Different name. Not telling you which.");
+      return;
+    }
+    G.tmp.vexAgain = false;
+    dlg('vexHub');
+  }
+  function vexIntroDone() {
+    F().vexMet = true;
+    F().racketLeftJunk = true;
+    G.friend(0);
+    refresh();
+  }
+  function tradeHubcap() {
+    G.take('gilded_hubcap');
+    F().torchGot = true;
+    G.give('cutting_torch');
+    refresh();
+  }
+
+  // ---------------------------------------------------------------------------
+  // HOTSPOT ACTIONS — WOODS EDGE
+  // ---------------------------------------------------------------------------
+  function actEmber() {
+    if (F().resinTaken) { say('c', "The ember-bark still glows, but I've got all the resin I need."); return; }
+    if (!F().torchGot) { say('c', 'Glowing amber resin, hard as glass and warm to the touch. Heat would soften it.'); return; }
+    if (!F().torchFueled) { Sound.sfx('error'); say('c', 'Click... click. No fuel in the torch.'); return; }
+    Sound.sfx('torch');
+    if (!G.has('noodle_cup')) { say('c', "It's melting! ...and dripping straight into the dirt. I need something to catch it in."); return; }
+    G.take('noodle_cup');
+    F().resinTaken = true;
+    setTimeout(() => {
+      G.give('ember_resin');
+      say('c', 'FSSSH... the resin melts right into the noodle cup. Smells like burnt caramel!');
+      refresh();
+    }, 600);
+  }
+  function actLog() {
+    if (F().torchFueled) {
+      F().sawPath = true; save();
+      say('c', "I could cut through this with the torch... but it's pitch black in there, and something just growled. Tomorrow. Definitely tomorrow.");
+      render();
+      return;
+    }
+    say('c', 'A massive fallen tree blocks the path into the Deep Woods. Way too big to climb. Something that cuts through wood, maybe?');
+  }
+  const WOODS_CRITTER = ["It's the little six-legged critter from my crash site! It followed me!", "It's guarding the path. Or napping on it. Hard to tell.", "It chirps at the dark path, then at me. I think it wants to show me something in there."];
+  function actWoodsCritter() {
+    const i = S.talked.wcrit || 0;
+    S.talked.wcrit = i + 1;
+    say('c', WOODS_CRITTER[i % WOODS_CRITTER.length]);
+    save();
+  }
 
   // ---------------------------------------------------------------------------
   // DIALOGUE RUNNER
   // ---------------------------------------------------------------------------
+  const NPC = { r: { name: 'Racket', portrait: (m) => Art.portrait('r', m || G.rMood()) }, v: { name: 'Vex', portrait: (m) => Art2.vexPortrait(m) } };
   const Dlg = {
-    open: false, node: null, queue: [], typing: null, waiting: false, done: null,
+    open: false, node: null, queue: [], typing: null, waiting: false,
     el: $('#dlg'), log: $('#dlg-log'), choices: $('#dlg-choices'),
     resolve(n) {
       let node = typeof n === 'string' ? DATA.dlg[n] : n;
       if (typeof node === 'function') node = node(G);
       return node;
+    },
+    setNpc(who, mood) {
+      $('#p-r').innerHTML = NPC[who].portrait(mood);
+      $('.dlg-portrait.left .pname').textContent = NPC[who].name;
+      this.el.classList.toggle('npc-vex', who === 'v');
     },
     start(id) {
       const node = this.resolve(id);
@@ -521,8 +768,8 @@
       this.log.innerHTML = '';
       this.choices.innerHTML = '';
       const cast = node.cast || ['r', 'c'];
-      this.el.classList.toggle('solo', !cast.includes('r'));
-      $('#p-r').innerHTML = Art.portrait('r', G.rMood());
+      this.el.classList.toggle('solo', !cast.includes('r') && !cast.includes('v'));
+      this.setNpc(cast.includes('v') ? 'v' : 'r');
       $('#p-c').innerHTML = Art.portrait('c', 'neutral');
       this.el.classList.remove('hidden');
       requestAnimationFrame(() => this.el.classList.add('show'));
@@ -534,30 +781,26 @@
       while (this.queue.length && this.queue[0][0] === 'fx') this.queue.shift()[1](G);
       if (this.queue.length) return this.show(this.queue.shift());
       const n = this.node;
-      if (n.choices) {
-        const cs = n.choices.filter((c) => !c.if || c.if(G));
-        this.renderChoices(cs);
-        return;
-      }
+      if (n.choices) { this.renderChoices(n.choices.filter((c) => !c.if || c.if(G))); return; }
       this.finish();
     },
     finish() {
       const n = this.node;
       if (n.go) {
-        const g = typeof n.go === 'function' ? n.go(G) : n.go;
+        const g = val(n.go, G);
         if (g) { this.run(this.resolve(g)); return; }
       }
       this.close();
       if (n.end) n.end(G);
     },
-    show([who, mood, text]) {
-      const t = typeof text === 'function' ? text(G) : text;
-      if (who === 'r') $('#p-r').innerHTML = Art.portrait('r', mood);
+    show([who, moodIn, text]) {
+      const t = val(text, G), mood = val(moodIn, G);
+      if (who === 'r' || who === 'v') this.setNpc(who, mood);
       if (who === 'c') $('#p-c').innerHTML = Art.portrait('c', mood);
-      this.el.dataset.speaker = who;
+      this.el.dataset.speaker = who === 'v' ? 'r' : who;
       const b = document.createElement('div');
       b.className = `line ${who}`;
-      b.innerHTML = who === 'n' ? '<span class="txt"></span>' : `<span class="who">${who === 'r' ? 'Racket' : 'Crystal'}</span><span class="txt"></span>`;
+      b.innerHTML = who === 'n' ? '<span class="txt"></span>' : `<span class="who">${NAMES[who] || 'Crystal'}</span><span class="txt"></span>`;
       this.log.appendChild(b);
       this.log.scrollTop = this.log.scrollHeight;
       const span = $('.txt', b);
@@ -565,7 +808,7 @@
       this.waiting = false;
       $('#dlg-next').classList.remove('show');
       clearInterval(this.typing);
-      const blip = who === 'r' ? 'blipR' : who === 'c' ? 'blipC' : 'blipN';
+      const blip = who === 'r' ? 'blipR' : who === 'c' ? 'blipC' : who === 'v' ? 'blipV' : 'blipN';
       this.typing = setInterval(() => {
         i += 1;
         span.textContent = t.slice(0, i);
@@ -626,12 +869,14 @@
   // ---------------------------------------------------------------------------
   // MODALS
   // ---------------------------------------------------------------------------
-  let onModalClose = null;
+  let onModalClose = null, modalHideTimer = null;
   function modal(title, body, opts = {}) {
     const m = $('#modal');
+    clearTimeout(modalHideTimer);
     $('.modal-card', m).className = `modal-card ${opts.cls || ''}`;
     $('.modal-title', m).textContent = title;
     $('.modal-body', m).innerHTML = body;
+    $('#modal .x').disabled = false;
     m.classList.remove('hidden');
     requestAnimationFrame(() => m.classList.add('show'));
     onModalClose = opts.onClose || null;
@@ -642,71 +887,110 @@
     const m = $('#modal');
     if (m.classList.contains('hidden')) return;
     m.classList.remove('show');
-    setTimeout(() => m.classList.add('hidden'), 220);
+    modalHideTimer = setTimeout(() => m.classList.add('hidden'), 220);
     const cb = onModalClose; onModalClose = null;
     render(); updateHud(); renderTray(); save();
     if (cb) setTimeout(cb, 240);
   }
   $('#modal .x').addEventListener('click', () => { Sound.sfx('click'); closeModal(); });
   $('#modal').addEventListener('click', (e) => { if (e.target.id === 'modal') closeModal(); });
+  G.ui = { modal, closeModal, say };
 
   // ---------- Ship status / diagnostics ----------
   const SYSTEMS = [
-    { id: 'fuel', name: 'Fuel Cell', diag: 'CRITICAL. Casing ejected, charge crystal shattered, wiring fried.', lockedHint: null },
-    { id: 'thrusters', name: 'Thrusters', diag: 'OFFLINE. Nozzles crumpled on impact.', lockedHint: 'Racket: "Junkyard. Tomorrow. One thing at a time."' },
+    { id: 'fuel', name: 'Fuel Cell', diag: 'CRITICAL. Casing ejected, charge crystal shattered, wiring fried.' },
+    { id: 'thrusters', name: 'Thrusters', diag: 'OFFLINE. Nozzles crumpled on impact.', lockedHint: 'Racket: "Junkyard. One thing at a time."' },
     { id: 'nav', name: 'Navigation', diag: 'CONFUSED. Current location: "???". Current mood: "???".', lockedHint: 'Needs a nav chip. Someone online is selling one. Suspiciously.' },
     { id: 'hull', name: 'Hull Plating', diag: 'HAS SEEN BETTER DAYS. Three breaches, one dent shaped like a face.', lockedHint: 'Something big and metal crashed out in the canyon, years ago...' },
     { id: 'core', name: 'Engine Core', diag: 'STABLE-ISH. Making a noise. A new noise.', lockedHint: 'Racket goes quiet when you ask about this one.' },
   ];
-  function openShip(fromCrash) {
-    const first = fromCrash && !S.flags.sawDiag;
-    const fuelParts = DATA.parts.map((p) => {
+  function partRows(key) {
+    const rep = DATA.repairs[key];
+    let rows = rep.parts.map((p) => {
       const st = S.parts[p.key] ? 'installed' : G.has(p.item) ? 'found' : 'missing';
-      const lbl = { installed: 'Installed', found: 'Found: bring it to the workbench', missing: S.flags.metRacket ? p.where : 'Missing' }[st];
+      const lbl = { installed: 'Installed', found: 'Found: bring it to the workbench', missing: F().metRacket ? p.where : 'Missing' }[st];
       return `<li class="part ${st}"><span class="chk">${st === 'installed' ? '✔' : st === 'found' ? '●' : '○'}</span><span class="pn">${p.name}</span><span class="pw">${esc(lbl)}</span></li>`;
     }).join('');
+    if (key === 'thrusters') {
+      const ok = F().torchFueled || F().nozzlesTaken;
+      const lbl = ok ? 'Fueled and ready' : F().torchGot ? 'Got it, but it needs fuel (JunkNet)' : 'Vex has one. She wants something shiny.';
+      rows = rows.replace('</li>', `</li><li class="part ${ok ? 'installed' : F().torchGot ? 'found' : 'missing'}"><span class="chk">${ok ? '✔' : F().torchGot ? '●' : '○'}</span><span class="pn">Cutting torch (tool)</span><span class="pw">${esc(lbl)}</span></li>`);
+    }
+    return rows;
+  }
+  function openShip(fromCrash) {
+    const first = fromCrash && !F().sawDiag;
+    const online = (S.repairs.fuel ? 1 : 0) + (S.repairs.thrusters ? 1 : 0);
     const rows = SYSTEMS.map((s) => {
-      if (s.id === 'fuel') {
-        const done = S.repairs.fuel;
-        return `<div class="sys ${done ? 'done' : 'active'}"><div class="sys-head"><span class="sys-name">${s.name}</span><span class="chip ${done ? 'ok' : 'bad'}">${done ? 'ONLINE' : 'CRITICAL'}</span></div>
-          ${done ? '<p class="sys-note">Humming happily. Racket pretends he isn\'t proud of it.</p>' : `<p class="sys-note">${esc(s.diag)}</p><ul class="parts">${fuelParts}</ul>`}</div>`;
-      }
+      const done = S.repairs[s.id];
+      const active = (s.id === 'fuel' && !done) || (s.id === 'thrusters' && S.repairs.fuel && F().phase1 && !done);
+      if (done) return `<div class="sys done"><div class="sys-head"><span class="sys-name">${s.name}</span><span class="chip ok">ONLINE</span></div><p class="sys-note">${s.id === 'fuel' ? "Humming happily. Racket pretends he isn't proud of it." : 'Test-fired. Roars like a dragon with hiccups.'}</p></div>`;
+      if (active) return `<div class="sys active"><div class="sys-head"><span class="sys-name">${s.name}</span><span class="chip bad">${s.id === 'fuel' ? 'CRITICAL' : 'OFFLINE'}</span></div><p class="sys-note">${esc(s.diag)}</p><ul class="parts">${partRows(s.id)}</ul></div>`;
       return `<div class="sys locked"><div class="sys-head"><span class="sys-name">${s.name}</span><span class="chip warn">${first ? 'DAMAGED' : 'LOCKED'}</span></div>
-        <p class="sys-note">${esc(first || !S.flags.metRacket ? s.diag : s.lockedHint)}</p></div>`;
+        <p class="sys-note">${esc(first || !F().metRacket ? s.diag : s.lockedHint)}</p></div>`;
     }).join('');
     const intro = first
       ? `<p class="lead">DANDELION // SELF-DIAGNOSTIC v2.1<br><span class="muted">Running... running... oh dear.</span></p>`
-      : `<p class="lead">Ship repairs: ${S.repairs.fuel ? 1 : 0} / 5 systems online.</p>`;
+      : `<p class="lead">Ship repairs: ${online} / 5 systems online.</p>`;
     modal(first ? 'Ship Diagnostics' : 'The Dandelion', intro + `<div class="systems">${rows}</div>`, {
       cls: 'ship-modal',
-      onClose: first ? () => { S.flags.sawDiag = true; updateHud(); save(); dlg('afterDiag'); } : null,
+      onClose: first ? () => { F().sawDiag = true; updateHud(); save(); dlg('afterDiag'); } : null,
     });
   }
 
-  // ---------- Job board ----------
+  // ---------- Job board + chores ----------
+  const JOB_GAMES = {
+    bolts: { run: (cb) => Mini.bolts(1, cb), reward: 10, f: 4, line: '...Sorted by size AND thread pitch? Who hurt you? Ten credits.' },
+    bolts2: { run: (cb) => Mini.bolts(2, cb), reward: 12, f: 3, line: "Nuts with nuts, washers with washers. Vex is gonna hate how organised this is. Twelve credits." },
+    tune: { run: (cb) => Mini.tune(cb), reward: 12, f: 3, line: "Listen to that idle. Smooth. ...Okay, you've got good hands. Twelve credits." },
+    wires: { run: (cb) => Mini.wires(cb), reward: 12, f: 3, line: "Not a single spark. Who ARE you? Twelve credits. And my respect. Don't spend it all at once." },
+  };
+  const REPLAY_LINES = ['Again? ...Fine. Two credits. Go wild.', "You just like doing that, huh. Me too. Don't tell anyone.", 'Two credits. And a nod. *nods*', 'You know these are chores, right? ...Okay. Two credits.'];
+  function playJob(id) {
+    const J = JOB_GAMES[id];
+    const replay = S.jobs[id] === 'done';
+    J.run(() => {
+      if (!replay) {
+        S.jobs[id] = 'done';
+        G.friend(J.f);
+        G.addCredits(J.reward);
+        say('r', J.line, 300);
+      } else {
+        G.addCredits(2);
+        say('r', REPLAY_LINES[Math.random() * REPLAY_LINES.length | 0], 300);
+      }
+      refresh();
+    });
+  }
+  const scrapSold = () => S.sold.filter((i) => i === 'hull_scrap' || i === 'antenna').length;
   function openJobs() {
-    if (!S.flags.metRacket) { say('c', 'A job board. Somebody around here has chores.'); return; }
-    const notes = DATA.jobs.map((j, i) => {
+    if (!F().metRacket) { say('c', 'A job board. Somebody around here has chores.'); return; }
+    const jobs = DATA.jobs.filter((j) => !j.phase || F().phase1);
+    const notes = jobs.map((j, i) => {
       const st = S.jobs[j.id];
       let status = st === 'done' ? 'DONE' : 'OPEN';
-      if (j.id === 'scrap' && st !== 'done') status = `${S.sold.length}/2 SOLD`;
-      return `<div class="note n${i} ${st === 'done' ? 'done' : ''}"><div class="pin"></div><h3>${j.title}</h3><p>${esc(j.body)}</p><div class="note-foot"><span>${j.reward}</span><b>${status}</b></div>${st === 'done' ? '<div class="stamp">PAID</div>' : ''}</div>`;
+      if (j.id === 'scrap' && st !== 'done') status = `${scrapSold()}/2 SOLD`;
+      const btn = JOB_GAMES[j.id] ? `<button class="btn note-btn" data-job="${j.id}">${st === 'done' ? 'Play again · 2 cr' : 'Start'}</button>` : '';
+      return `<div class="note n${i % 5} ${st === 'done' ? 'done' : ''}"><div class="pin"></div><h3>${j.title}</h3><p>${esc(j.body)}</p><div class="note-foot"><span>${j.reward}</span><b>${status}</b></div>${btn}${st === 'done' ? '<div class="stamp">PAID</div>' : ''}</div>`;
     }).join('');
     modal('Job Board', `<div class="board">${notes}
       <div class="note n3 flavor"><div class="pin"></div><h3>LOST</h3><p>My patience. If found, keep it.</p></div>
-      <div class="note n4 flavor"><div class="pin"></div><h3>NO SOLICITORS</h3><p>This means you, Gary.</p></div></div>`, { cls: 'jobs-modal' });
+      <div class="note n4 flavor"><div class="pin"></div><h3>NO SOLICITORS</h3><p>This means you, Gary.${F().vexMet ? ' And you, Vex.' : ''}</p></div></div>`, { cls: 'jobs-modal' });
+    $$('[data-job]', $('#modal')).forEach((b) => b.addEventListener('click', () => { Sound.sfx('click'); playJob(b.dataset.job); }));
   }
 
   // ---------- JunkNet terminal ----------
   let termTab = 'buy';
   function openTerminal() {
-    if (!S.flags.metRacket) { say('c', "Someone's computer. Better not snoop. ...Yet."); return; }
+    if (!F().metRacket) { say('c', "Someone's computer. Better not snoop. ...Yet."); return; }
     modal('JunkNet', '', { cls: 'term-modal' });
     renderTerminal();
   }
+  const owned = (id) => (id === 'wiring' ? G.has('wiring') || S.parts.wiring : id === 'fuel' ? !!F().fuelBought : false);
+  const buyable = (l) => l.id === 'wiring' || l.id === 'fuel';
   function renderTerminal(msg) {
     const body = $('#modal .modal-body');
-    if (!S.flags.termUnlocked) {
+    if (!F().termUnlocked) {
       body.innerHTML = `<div class="crt"><pre>JUNKNET OS v0.3 (definitely licensed)
 USER: RACKET
 PASSWORD: ________</pre>
@@ -716,9 +1000,9 @@ PASSWORD: ________</pre>
       $$('[data-pw]', body).forEach((b) => b.addEventListener('click', () => {
         const p = b.dataset.pw;
         if (p === 'trashpanda') {
-          S.flags.termUnlocked = true; Sound.sfx('success'); save();
+          F().termUnlocked = true; Sound.sfx('success'); save();
           renderTerminal('ACCESS GRANTED. Welcome back, RACKET.\n1 unread message: "stop calling me trash panda" (from: yourself)');
-          if (!S.flags.pwJoke) { S.flags.pwJoke = true; setTimeout(() => { if (S.scene === 'garage') say('r', 'You figured out my password. Great. Fantastic. Love that.'); }, 600); }
+          if (!F().pwJoke) { F().pwJoke = true; setTimeout(() => { if (S.scene === 'garage') say('r', 'You figured out my password. Great. Fantastic. Love that.'); }, 600); }
         } else {
           Sound.sfx('error');
           renderTerminal(p === 'password' ? 'ACCESS DENIED. He is not THAT careless.' : 'ACCESS DENIED. Accurate, though.');
@@ -727,20 +1011,19 @@ PASSWORD: ________</pre>
       return;
     }
     const sellable = S.inv.filter((i) => DATA.sellPrices[i]);
-    const listings = DATA.listings.map((l) => {
-      const owned = l.id === 'wiring' && (G.has('wiring') || S.parts.wiring);
+    const listings = DATA.listings.filter((l) => !l.phase || F().phase1).map((l) => {
       let btn;
-      if (owned) btn = `<span class="tag ok">PURCHASED</span>`;
+      if (owned(l.id)) btn = `<span class="tag ok">PURCHASED</span>`;
       else if (l.status) btn = `<span class="tag">${l.status}</span>`;
-      else if (l.id === 'wiring') btn = `<button class="term-btn buy" data-buy="wiring" ${S.credits < l.price ? 'disabled' : ''}>${S.credits < l.price ? `NEED ${l.price} CR` : `BUY · ${l.price} CR`}</button>`;
+      else if (buyable(l)) btn = `<button class="term-btn buy" data-buy="${l.id}" ${S.credits < l.price ? 'disabled' : ''}>${S.credits < l.price ? `NEED ${l.price} CR` : `BUY · ${l.price} CR`}</button>`;
       else btn = `<button class="term-btn" data-joke="${l.id}">${l.price.toLocaleString()} CR</button>`;
-      return `<div class="listing ${l.id === 'wiring' ? 'hot' : ''}"><div class="l-main"><div class="l-name">${esc(l.name)}</div><div class="l-blurb">${esc(l.blurb)}</div>
+      return `<div class="listing ${buyable(l) && !owned(l.id) ? 'hot' : ''}"><div class="l-main"><div class="l-name">${esc(l.name)}</div><div class="l-blurb">${esc(l.blurb)}</div>
         <div class="l-seller">seller: ${l.seller} ${'★'.repeat(l.stars)}${'☆'.repeat(5 - l.stars)}</div></div><div class="l-act">${btn}</div></div>`;
     }).join('');
     const sell = sellable.length
-      ? sellable.map((i) => `<div class="listing"><div class="l-main"><div class="l-name">${esc(DATA.items[i].name)}</div><div class="l-blurb">Buyer scrapmonger_88: "i buy anything. ANYTHING."</div></div>
-          <div class="l-act"><button class="term-btn buy" data-sell="${i}">SELL · ${DATA.sellPrices[i]} CR</button></div></div>`).join('')
-      : `<p class="muted">Nothing to sell. Scrap from your crash site sells here.</p>`;
+      ? sellable.map((i) => { const [buyer, quote] = DATA.buyers[i] || ['scrapmonger_88', 'i buy anything.']; return `<div class="listing"><div class="l-main"><div class="l-name">${esc(itemName(i))}</div><div class="l-blurb">Buyer ${buyer}: "${esc(quote)}"</div></div>
+          <div class="l-act"><button class="term-btn buy" data-sell="${i}">SELL · ${DATA.sellPrices[i]} CR</button></div></div>`; }).join('')
+      : `<p class="muted">Nothing to sell. Junk from the crash site and the junkyard sells here.</p>`;
     body.innerHTML = `<div class="crt">
       <div class="term-top"><span>JUNKNET · logged in as RACKET</span><span class="term-cr">${S.credits} CR</span></div>
       <div class="term-tabs"><button class="term-tab ${termTab === 'buy' ? 'on' : ''}" data-tab="buy">BUY</button><button class="term-tab ${termTab === 'sell' ? 'on' : ''}" data-tab="sell">SELL${sellable.length ? ` (${sellable.length})` : ''}</button></div>
@@ -749,19 +1032,30 @@ PASSWORD: ________</pre>
     $$('[data-tab]', body).forEach((b) => b.addEventListener('click', () => { termTab = b.dataset.tab; Sound.sfx('click'); renderTerminal(); }));
     $$('[data-joke]', body).forEach((b) => b.addEventListener('click', () => {
       Sound.sfx('error');
-      renderTerminal(b.dataset.joke === 'muffler' ? `INSUFFICIENT FUNDS. You have ${S.credits} CR. You need 9,999 CR. And a reason.` : 'INSUFFICIENT FUNDS. Also, rude to even look.');
+      const j = b.dataset.joke;
+      renderTerminal(j === 'muffler' ? `INSUFFICIENT FUNDS. You have ${S.credits} CR. You need 9,999 CR. And a reason.` : j === 'wrench' ? 'INSUFFICIENT FUNDS. The wrench understands. The wrench is always here for you.' : 'INSUFFICIENT FUNDS. Also, rude to even look.');
     }));
     $$('[data-buy]', body).forEach((b) => b.addEventListener('click', () => {
-      if (S.credits < DATA.wiringPrice) return;
-      S.credits -= DATA.wiringPrice;
+      const l = DATA.listings.find((x) => x.id === b.dataset.buy);
+      if (S.credits < l.price || owned(l.id)) return;
+      S.credits -= l.price;
+      if (l.id === 'fuel') F().fuelBought = true;
       Sound.sfx('coin'); updateHud(); save();
       closeModal();
+      const second = F().droneSeen;
+      F().droneSeen = true;
       setTimeout(() => {
         Sound.sfx('drone');
-        card('Thirty seconds later, a rattling delivery drone kicks open the window, drops a box marked FRAGILE(ISH), and flees into the night.', () => {
-          G.give('wiring');
-          say('c', 'Copper wiring harness! It has... tiny teeth marks.');
-          say('r', "Possum. Classic. It'll work.", 2600);
+        card(second ? 'The same rattling delivery drone. It looks at you. You look at it. It drops the box and flees again.' : 'Thirty seconds later, a rattling delivery drone kicks open the window, drops a box marked FRAGILE(ISH), and flees into the night.', () => {
+          if (l.id === 'wiring') {
+            G.give('wiring');
+            say('c', 'Copper wiring harness! It has... tiny teeth marks.');
+            say('r', "Possum. Classic. It'll work.", 2600);
+          } else {
+            G.give('torch_fuel');
+            if (!F().torchFueled) say('c', 'Torch fuel! Now I just need a torch to put it in.');
+            say('r', "Don't drop that. I mean it. Don't.", 2600);
+          }
           refresh();
         });
       }, 300);
@@ -771,8 +1065,10 @@ PASSWORD: ________</pre>
       G.take(id);
       S.sold.push(id);
       G.addCredits(DATA.sellPrices[id]);
-      let m = `SOLD: ${DATA.items[id].name}. scrapmonger_88 says "pleasure doing business. dont tell anyone."`;
-      if (S.sold.length >= 2 && S.jobs.scrap !== 'done') {
+      const [buyer] = DATA.buyers[id] || ['scrapmonger_88'];
+      let m = `SOLD: ${itemName(id)} to ${buyer}.`;
+      if (buyer === 'scrapmonger_88') m += ' "pleasure doing business. dont tell anyone."';
+      if (scrapSold() >= 2 && S.jobs.scrap !== 'done') {
         S.jobs.scrap = 'done'; G.friend(3);
         m += '\nJOB COMPLETE: Haul scrap.';
         setTimeout(() => { if (S.scene === 'garage') say('r', "You cleaned up my woods AND made money. ...Huh. Efficient."); }, 400);
@@ -782,51 +1078,81 @@ PASSWORD: ________</pre>
     }));
   }
 
-  // ---------- Workbench ----------
+  // ---------- Workbench (one repair at a time) ----------
   const BENCH_LINES = {
     casing: 'Seat it. Gently. GENTLY. ...Okay, that works.',
     crystal: 'Careful, that thing bites. Ha. Literally.',
     wiring: 'Red to red. Not that red. The other red. ...Good.',
+    nozzles: 'Line up the flange. Torque it down. Hauler-7 nozzles, on a scout ship. Vex would be furious. I love it.',
+    gasket: 'Gasket goes between the nozzles and the engine. Seat it flat. ...That seal is perfect. Huh.',
   };
+  const currentRepair = () => (!S.repairs.fuel ? 'fuel' : F().phase1 && !S.repairs.thrusters ? 'thrusters' : null);
+  const schematic = (key, parts, charged, t) => (key === 'fuel' ? Art.fuelCellSchematic(parts, charged, t) : Art2.thrusterSchematic(parts, charged, t));
   function openWorkbench(item) {
-    if (!S.flags.metRacket) return;
-    if (S.repairs.fuel) {
-      modal('Workbench', `<div class="bench">${Art.fuelCellSchematic({ casing: 1, crystal: 1, wiring: 1 }, true, 1)}
-        <p class="lead">The fuel cell is installed and humming. Next up: <b>thrusters</b>. Racket says the junkyard's where you'll find them.</p></div>`, { cls: 'bench-modal' });
+    if (!F().metRacket) return;
+    const key = currentRepair();
+    if (!key) {
+      const next = S.repairs.thrusters ? 'Fuel cell and thrusters are done. Next up: <b>navigation</b>. Racket mutters something about the Deep Woods.' : 'The fuel cell is installed and humming. Next up: <b>thrusters</b>. Racket says the junkyard\'s where you\'ll find them.';
+      modal('Workbench', `<div class="bench">${schematic(S.repairs.thrusters ? 'thrusters' : 'fuel', { casing: 1, crystal: 1, wiring: 1, nozzles: 1, gasket: 1 }, true, 1)}<p class="lead">${next}</p></div>`, { cls: 'bench-modal' });
       return;
     }
-    modal('Workbench: Fuel Cell', '<div class="bench"></div>', { cls: 'bench-modal' });
-    renderBench();
-    if (item) { const p = DATA.parts.find((pp) => pp.item === item); if (p && !S.parts[p.key]) setTimeout(() => installPart(p.key), 300); }
+    modal(`Workbench: ${DATA.repairs[key].name}`, '<div class="bench"></div>', { cls: 'bench-modal' });
+    renderBench(key);
+    if (item) {
+      const p = DATA.repairs[key].parts.find((pp) => pp.item === item);
+      if (p && !S.parts[p.key]) setTimeout(() => installPart(key, p.key), 300);
+      else if ((item === 'copper_sheet' || item === 'ember_resin') && key === 'thrusters') setTimeout(() => craftGasket(), 300);
+    }
   }
-  function renderBench(justKey, line) {
+  function renderBench(key, justKey, line) {
     const el = $('#modal .bench');
     if (!el) return;
-    const all = DATA.parts.every((p) => S.parts[p.key]);
-    const rows = DATA.parts.map((p) => {
+    const rep = DATA.repairs[key];
+    const all = rep.parts.every((p) => S.parts[p.key]);
+    const rows = rep.parts.map((p) => {
       const inst = S.parts[p.key], have = G.has(p.item);
+      let action = inst ? '<span class="tag ok">✔</span>' : have ? `<button class="btn" data-install="${p.key}">Install</button>` : '<span class="tag">Missing</span>';
+      let info = inst ? 'Installed' : have ? 'In your pack. Ready to install.' : esc(p.where);
+      if (p.key === 'gasket' && !inst && !have) {
+        const c = G.has('copper_sheet'), r = G.has('ember_resin');
+        if (c && r) { action = '<button class="btn" data-craft="gasket">Cut gasket</button>'; info = 'Copper sheet + ember resin in your pack. Time to cut!'; }
+        else info = `Copper sheet ${c ? '✔' : '✗'} · Ember resin ${r ? '✔' : '✗'}. ${esc(p.where)}`;
+      }
       return `<div class="bench-row ${inst ? 'installed' : have ? 'ready' : 'missing'}">
         <div class="bench-icon">${have || inst ? Art.icon(p.item) : '<span>?</span>'}</div>
-        <div class="bench-info"><b>${p.name}</b><span>${inst ? 'Installed' : have ? 'In your pack. Ready to install.' : esc(p.where)}</span></div>
-        <div>${inst ? '<span class="tag ok">✔</span>' : have ? `<button class="btn" data-install="${p.key}">Install</button>` : '<span class="tag">Missing</span>'}</div></div>`;
+        <div class="bench-info"><b>${p.name}</b><span>${info}</span></div><div>${action}</div></div>`;
     }).join('');
-    el.innerHTML = `<div class="schem-wrap">${Art.fuelCellSchematic(S.parts, false, 0)}<div class="sparks"></div></div>
-      <div class="bench-line">${line ? `<b>Racket:</b> ${esc(line)}` : `<b>Racket:</b> ${all ? "That's all three. Seal it up and charge it. Don't blink." : "Bring me parts. Well, bring the BENCH parts. I'll watch."}`}</div>
+    const idle = key === 'fuel'
+      ? (all ? "That's all three. Seal it up and charge it. Don't blink." : "Bring me parts. Well, bring the BENCH parts. I'll watch.")
+      : (all ? "Nozzles on, gasket seated. Let's hear her. Test-fire when you're ready." : 'Nozzles and a gasket. Bring me both and we make some noise.');
+    el.innerHTML = `<div class="schem-wrap">${schematic(key, S.parts, false, 0)}<div class="sparks"></div></div>
+      <div class="bench-line"><b>Racket:</b> ${esc(line || idle)}</div>
       <div class="bench-rows">${rows}</div>
-      <div class="bench-foot"><div class="charge-bar"><i></i></div><button class="btn big" id="btn-charge" ${all ? '' : 'disabled'}>Seal &amp; Charge</button></div>`;
+      <div class="bench-foot"><div class="charge-bar"><i></i></div><button class="btn big" id="btn-charge" ${all ? '' : 'disabled'}>${key === 'fuel' ? 'Seal &amp; Charge' : 'Fit &amp; Test-fire'}</button></div>`;
     if (justKey) { const g = $(`[data-part="${justKey}"]`, el); if (g) g.classList.add('just'); burst(14); }
-    $$('[data-install]', el).forEach((b) => b.addEventListener('click', () => installPart(b.dataset.install)));
-    $('#btn-charge', el).addEventListener('click', chargeCell);
+    $$('[data-install]', el).forEach((b) => b.addEventListener('click', () => installPart(key, b.dataset.install)));
+    $$('[data-craft]', el).forEach((b) => b.addEventListener('click', craftGasket));
+    $('#btn-charge', el).addEventListener('click', () => chargeRepair(key));
   }
-  function installPart(key) {
-    const p = DATA.parts.find((pp) => pp.key === key);
+  function installPart(key, pk) {
+    const p = DATA.repairs[key].parts.find((pp) => pp.key === pk);
     if (!G.has(p.item)) return;
-    S.parts[key] = true;
+    S.parts[pk] = true;
     G.take(p.item);
     Sound.sfx('clank');
     setTimeout(() => Sound.sfx('spark'), 120);
-    renderBench(key, BENCH_LINES[key]);
+    renderBench(key, pk, BENCH_LINES[pk]);
     updateHud(); save();
+  }
+  function craftGasket() {
+    if (!(G.has('copper_sheet') && G.has('ember_resin'))) return;
+    closeModal();
+    setTimeout(() => Mini.gasket(() => {
+      G.take('copper_sheet'); G.take('ember_resin');
+      G.give('gasket');
+      G.friend(2);
+      setTimeout(() => openWorkbench(), 350);
+    }), 260);
   }
   function burst(n) {
     const box = $('#modal .sparks');
@@ -841,94 +1167,51 @@ PASSWORD: ________</pre>
       setTimeout(() => s.remove(), 900);
     }
   }
-  function chargeCell() {
+  function chargeRepair(key) {
     const el = $('#modal .bench');
     const btn = $('#btn-charge', el);
-    btn.disabled = true; btn.textContent = 'Charging...';
-    $$('[data-install]', el).forEach((b) => (b.disabled = true));
+    btn.disabled = true; btn.textContent = key === 'fuel' ? 'Charging...' : 'Bolting on...';
+    $$('[data-install],[data-craft]', el).forEach((b) => (b.disabled = true));
     $('#modal .x').disabled = true;
     Sound.sfx('hum', 3);
     const bar = $('.charge-bar i', el), wrap = $('.schem-wrap', el);
     const t0 = performance.now(), dur = 3000;
     let lastSpark = 0;
-    $('.bench-line', el).innerHTML = '<b>Racket:</b> Here we go. Easy... easy...';
+    $('.bench-line', el).innerHTML = `<b>Racket:</b> ${key === 'fuel' ? 'Here we go. Easy... easy...' : 'Torque check... seal check... okay. Okay. This is the fun part.'}`;
     const step = (now) => {
       const t = Math.min(1, (now - t0) / dur);
       bar.style.width = t * 100 + '%';
-      wrap.firstElementChild.outerHTML = Art.fuelCellSchematic(S.parts, false, t);
+      wrap.firstElementChild.outerHTML = schematic(key, S.parts, false, t);
       if (now - lastSpark > 180) { burst(4); Sound.sfx('spark'); lastSpark = now; }
       if (t < 1) { requestAnimationFrame(step); return; }
-      S.repairs.fuel = true;
-      ['casing', 'crystal', 'wiring'].forEach((k) => { S.parts[k] = true; });
+      S.repairs[key] = true;
       Sound.sfx('success');
       burst(30);
-      wrap.firstElementChild.outerHTML = Art.fuelCellSchematic(S.parts, true, 1);
+      wrap.firstElementChild.outerHTML = schematic(key, S.parts, true, 1);
       wrap.classList.add('flash');
       G.friend(10);
       save();
       $('#modal .x').disabled = false;
-      $('.bench-line', el).innerHTML = '<b>FUEL CELL ONLINE.</b> The Dandelion\'s engine glows teal for the first time since the crash.';
+      $('.bench-line', el).innerHTML = key === 'fuel'
+        ? '<b>FUEL CELL ONLINE.</b> The Dandelion\'s engine glows teal for the first time since the crash.'
+        : '<b>THRUSTERS FITTED.</b> Racket is already dragging the bay door open, looking like a kid on his birthday.';
       $('.bench-rows', el).innerHTML = '';
-      $('.bench-foot', el).innerHTML = '<button class="btn big" id="btn-done">Nice!</button>';
-      onModalClose = () => dlg('fuelDone');
+      $('.bench-foot', el).innerHTML = `<button class="btn big" id="btn-done">${key === 'fuel' ? 'Nice!' : "Let's fire her up!"}</button>`;
+      onModalClose = () => dlg(key === 'fuel' ? 'fuelDone' : 'thrustersFit');
       $('#btn-done', el).addEventListener('click', closeModal);
     };
     requestAnimationFrame(step);
   }
 
-  // ---------- Bolt sorting mini-game ----------
-  let bolts = [], boltSel = null;
-  function openBoltGame() {
-    const sizes = ['S', 'S', 'S', 'M', 'M', 'M', 'L', 'L', 'L'];
-    bolts = sizes.map((s, i) => ({ id: i, size: s, done: false }));
-    bolts.push({ id: 99, size: 'sock', done: false });
-    for (let i = bolts.length - 1; i > 0; i--) { const j = Math.random() * (i + 1) | 0;[bolts[i], bolts[j]] = [bolts[j], bolts[i]]; }
-    boltSel = null;
-    modal('Sort the Bolt Bin', '<div class="boltgame"></div>', { cls: 'bolt-modal' });
-    renderBolts('Tap a bolt, then tap the bin it belongs in.');
-  }
-  function renderBolts(msg) {
-    const el = $('#modal .boltgame');
-    if (!el) return;
-    const counts = { S: 0, M: 0, L: 0 };
-    bolts.forEach((b) => { if (b.done && counts[b.size] != null) counts[b.size]++; });
-    el.innerHTML = `<p class="bolt-msg">${esc(msg)}</p>
-      <div class="pile">${bolts.filter((b) => !b.done).map((b) => `<button class="bolt ${boltSel === b.id ? 'sel' : ''}" data-b="${b.id}" aria-label="${b.size === 'sock' ? 'sock' : 'bolt'}">${b.size === 'sock' ? Art.sock : Art.bolt(b.size)}</button>`).join('')}</div>
-      <div class="bins">${['S', 'M', 'L'].map((s) => `<button class="bin" data-bin="${s}"><span class="bin-label">${{ S: 'Small', M: 'Medium', L: 'Large' }[s]}</span><span class="bin-count">${counts[s]}/3</span></button>`).join('')}</div>`;
-    $$('[data-b]', el).forEach((b) => b.addEventListener('click', () => {
-      const bo = bolts.find((x) => x.id === +b.dataset.b);
-      if (bo.size === 'sock') { Sound.sfx('error'); renderBolts('Racket: "Leave the sock. The sock stays. Don\'t ask about the sock."'); return; }
-      boltSel = bo.id; Sound.sfx('click'); renderBolts(msg);
-    }));
-    $$('[data-bin]', el).forEach((b) => b.addEventListener('click', () => {
-      if (boltSel == null) { renderBolts('Pick a bolt first.'); return; }
-      const bo = bolts.find((x) => x.id === boltSel);
-      if (bo.size === b.dataset.bin) {
-        bo.done = true; boltSel = null; Sound.sfx('clank');
-        if (bolts.filter((x) => x.size !== 'sock' && !x.done).length === 0) { finishBolts(); return; }
-        renderBolts(['Clink.', 'Clank. Nice.', 'Into the bin it goes.', 'Satisfying.'][Math.random() * 4 | 0]);
-      } else {
-        Sound.sfx('error');
-        renderBolts(['Racket: "That\'s a medium. Are you even looking?"', 'Racket: "Wrong bin. I can hear it being wrong."', 'Racket: "Nope. Size matters. In bolts."'][Math.random() * 3 | 0]);
-      }
-    }));
-  }
-  function finishBolts() {
-    S.jobs.bolts = 'done';
-    G.friend(4);
-    G.addCredits(10);
-    Sound.sfx('success');
-    closeModal();
-    say('r', '...Sorted by size AND thread pitch? Who hurt you? Ten credits.', 400);
-  }
-
   // ---------- Map ----------
   function openMap() {
+    const f = S.flags;
     const locs = [
       { id: 'crash', name: 'Crash Site', note: 'Where the Dandelion came down.', open: true },
-      { id: 'garage', name: "Racket's Garage", note: S.flags.sawDiag ? 'Grumpy raccoon. Good tools.' : 'Check your ship first.', open: S.flags.sawDiag },
-      { id: 'junkyard', name: 'The Junkyard', note: S.flags.phase1 ? 'Racket: "Tomorrow. Bring snacks."' : 'Racket: "Not yet. Fuel cell first."', open: false },
-      { id: 'woods', name: 'The Deep Woods', note: 'A fallen tree blocks the path. Something to cut through it would help.', open: false },
+      { id: 'garage', name: "Racket's Garage", note: f.sawDiag ? 'Grumpy raccoon. Good tools.' : 'Check your ship first.', open: f.sawDiag },
+      { id: 'junkyard', name: "Vex's Junkyard", note: f.phase1 ? (f.vexMet ? 'Scrap, floodlights and one very opinionated magpie.' : 'Racket: "Fine. I\'m coming with you."') : 'Racket: "Not yet. Fuel cell first."', open: !!f.phase1 },
+      { id: 'woods', name: 'Woods Edge', note: f.phase1 ? 'Past the crash site. Ember-bark trees and a fallen tree.' : 'Racket: "Stay out of the woods. For now."', open: !!f.phase1 },
+      { id: 'deep', name: 'The Deep Woods', note: f.sawPath ? 'You could cut through the fallen tree... tomorrow. (Phase 3)' : 'A fallen tree blocks the path. (Phase 3)', open: false },
       { id: 'canyon', name: '???', note: 'Racket goes quiet about the canyon.', open: false },
       { id: 'station', name: '???', note: 'A light blinks on the ridge some nights.', open: false },
     ];
@@ -937,7 +1220,7 @@ PASSWORD: ________</pre>
     $$('[data-loc]', $('#modal')).forEach((b) => b.addEventListener('click', () => {
       const id = b.dataset.loc;
       closeModal();
-      if (id !== S.scene) setTimeout(() => go(id), 250);
+      if (id !== S.scene) setTimeout(() => travel(id), 250);
     }));
   }
 
@@ -966,37 +1249,57 @@ PASSWORD: ________</pre>
   // STORY BEATS
   // ---------------------------------------------------------------------------
   function introDone() {
-    S.flags.metRacket = true;
-    S.jobs = { radio: 'open', bolts: 'open', scrap: 'open' };
+    F().metRacket = true;
+    S.jobs.radio = 'open'; S.jobs.bolts = 'open'; S.jobs.scrap = 'open';
     save();
     card('Racket hitches the Dandelion to a tow truck held together with duct tape and spite. Ten minutes later, it\'s sitting in his bay.', () => {
-      S.flags.shipTowed = true;
+      F().shipTowed = true;
       refresh();
       say('r', "Well? Crash site's that way. Shoo.", 300);
     });
   }
   function nightScene() {
     card('Later that night...', () => {
-      S.flags.noodles = true;
+      F().noodles = true;
       S.pos.garage = 340;
       G.tmp.face = -1;
       refresh();
       setTimeout(() => dlg('noodles'), 400);
     });
   }
-  function phaseEnd() {
-    S.flags.phase1 = true;
-    S.pos.garage = 820;
+  function fireThrusters() {
+    G.tmp.testFire = true;
+    render();
+    Sound.sfx('roar');
+    const st = $('#stage');
+    st.classList.add('rumbling');
+    setTimeout(() => st.classList.remove('rumbling'), 3200);
+  }
+  function roofScene() {
+    card('Later, up on the garage roof...', () => {
+      G.tmp.testFire = false;
+      S.scene = 'roof';
+      refresh();
+      Sound.setAmbience('forest');
+      setTimeout(() => dlg('roof'), 500);
+    });
+  }
+  function phaseEnd(n = 1) {
+    if (n === 1) { F().phase1 = true; migrate(); S.pos.garage = 820; }
+    else { F().phase2 = true; S.scene = 'garage'; S.pos.garage = 820; Sound.setAmbience('garage'); }
     save();
     render();
     updateHud();
+    const P = n === 1
+      ? { lead: 'The fuel cell hums, the Dandelion glows, and somebody gave you a key on a raccoon keychain.', next: '<b>Phase 2: The Junkyard.</b> Open the map when you\'re ready. Racket\'s coming with you, whether he likes it or not.' }
+      : { lead: 'The thrusters roar, Racket laughed out loud for the first time in years, and he almost told you how he crashed here.', next: 'Coming next: <b>The Deep Woods</b>. A fallen tree, a cutting torch, something with yellow eyes, and whatever Racket isn\'t telling you.' };
     const close = card('', null, {
-      title: 'End of Phase 1',
+      title: `End of Phase ${n}`,
       noTap: true,
       html: `<div class="phase-end">
-        <p>The fuel cell hums, the Dandelion glows, and somebody gave you a key on a raccoon keychain.</p>
+        <p>${P.lead}</p>
         <p class="opinion">Racket's opinion of you: <em>${TIER_NAMES[G.tier()]}</em></p>
-        <p class="muted">Coming next: <b>The Junkyard</b> (thruster parts, a cutting torch, a grumpy scrap dealer), then <b>The Deep Woods</b>.</p>
+        <p class="muted">${P.next}</p>
         <div class="row"><button class="btn big" id="pe-stay">Keep exploring</button><button class="btn" id="pe-title">Back to title</button></div></div>`,
     });
     $('#pe-stay').addEventListener('click', () => { Sound.sfx('click'); close(); });
@@ -1007,13 +1310,15 @@ PASSWORD: ________</pre>
   // IDLE BANTER
   // ---------------------------------------------------------------------------
   setInterval(() => {
-    if (S.scene !== 'garage' || !S.flags.metRacket || isBlocked()) return;
+    if (S.scene !== 'garage' || !F().metRacket || isBlocked()) return;
     const now = Date.now();
     if (now - lastInput > 22000 && now - lastIdle > 26000) {
       lastIdle = now;
-      const pool = DATA.idle[Math.min(G.tier(), DATA.idle.length - 1)];
+      const t = Math.min(G.tier(), DATA.idle.length - 1);
+      let pool = DATA.idle[t];
+      if (F().phase1 && DATA.idle2) pool = pool.concat(DATA.idle2[Math.min(t, DATA.idle2.length - 1)].filter((l) => F().vexMet || !/Vex|Bertha/.test(l)));
       let line = pool[Math.random() * pool.length | 0];
-      if (line.includes('radio') && !S.flags.radioFixed) line = pool[0];
+      if (line.includes('radio') && !F().radioFixed) line = pool[0];
       say('r', line);
     }
   }, 1000);
@@ -1031,7 +1336,7 @@ PASSWORD: ________</pre>
     Sound.sfx('click');
     if (a === 'hint') { sceneEl.classList.add('reveal'); setTimeout(() => sceneEl.classList.remove('reveal'), 1800); }
     if (a === 'ship') openShip();
-    if (a === 'map') openMap();
+    if (a === 'map') { if (S.scene === 'roof') return; openMap(); }
     if (a === 'menu') openMenu();
     if (a === 'sound') { Sound.toggleSound(); updateHud(); }
     if (a === 'music') { Sound.toggleMusic(); updateHud(); }
@@ -1083,14 +1388,19 @@ PASSWORD: ________</pre>
     const d = loadSave();
     if (!d) { newGame(); return; }
     S = d; G.tmp = {}; sel = null;
+    migrate();
     hideTitle();
-    if (Sound.prefs.music && S.flags.radioFixed && S.station < Sound.stations.length) Sound.setStation(S.station);
+    if (Sound.prefs.music && F().radioFixed && S.station < Sound.stations.length) Sound.setStation(S.station);
+    if (S.scene === 'roof' && F().phase2) S.scene = 'garage';
     refresh();
     Sound.setAmbience(SCENES[S.scene].amb);
     // Resume an interrupted story beat
-    if (S.repairs.fuel && !S.flags.noodles) setTimeout(() => dlg('fuelDone'), 500);
-    else if (S.flags.noodles && !S.flags.phase1) setTimeout(() => dlg('noodles'), 500);
-    else if (S.flags.metRacket && !S.flags.shipTowed) { S.flags.shipTowed = true; refresh(); }
+    if (S.scene === 'roof') setTimeout(() => dlg('roof'), 500);
+    else if (S.repairs.thrusters && !F().phase2) setTimeout(() => roofScene(), 400);
+    else if (S.repairs.fuel && !F().noodles) setTimeout(() => dlg('fuelDone'), 500);
+    else if (F().noodles && !F().phase1) setTimeout(() => dlg('noodles'), 500);
+    else if (F().metRacket && !F().shipTowed) { F().shipTowed = true; refresh(); }
+    else if (S.scene === 'junkyard' && F().vexMet && !F().racketLeftJunk) { F().racketLeftJunk = true; refresh(); }
     else SCENES[S.scene].onEnter();
   }
   $('#btn-new').addEventListener('click', () => {
@@ -1114,7 +1424,7 @@ PASSWORD: ________</pre>
   // ---------------------------------------------------------------------------
   // BOOT
   // ---------------------------------------------------------------------------
-  $('#defs').innerHTML = `<defs>${Art.DEFS}</defs>`;
+  $('#defs').innerHTML = `<defs>${Art.DEFS}${Art2.DEFS}</defs>`;
   render(); updateHud(); renderTray();
   showTitle();
 })();
