@@ -235,5 +235,211 @@ const Mini = (() => {
     draw('Trace the outline with the torch: tap the dots in order, 1 to 16.');
   }
 
-  return { bolts, tune, wires, breakers, gasket };
+  // ---------------------------------------------------------------- firefly lanterns
+  function fireflies(onWin) {
+    const NEED = 12;
+    G.ui.modal('Firefly Lanterns', `<div class="ffgame">
+      <p class="bolt-msg" id="ff-msg">Catch fireflies to fill the lanterns and light the path. Leave the red sparkbugs alone.</p>
+      <div class="ff-field" id="ff-field"></div>
+      <div class="lanterns">${[0, 1, 2].map((i) => `<div class="lantern" data-l="${i}"><i></i><span>0/4</span></div>`).join('')}</div></div>`, { cls: 'ff-modal' });
+    const field = $('#ff-field');
+    let caught = 0, raf = 0, last = performance.now(), alive = true;
+    const bugs = [];
+    const spawn = (bad) => {
+      const el = document.createElement('button');
+      el.className = 'ff' + (bad ? ' bad' : '');
+      el.setAttribute('aria-label', bad ? 'sparkbug' : 'firefly');
+      const b = { el, x: Math.random() * 90 + 5, y: Math.random() * 80 + 10, vx: (Math.random() - .5) * 18, vy: (Math.random() - .5) * 14, bad, t: Math.random() * 6 };
+      el.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (!alive) return;
+        if (b.bad) {
+          Sound.sfx('zap');
+          caught = Math.max(0, caught - 1);
+          $('#ff-msg').textContent = pickOne(['ZAP! A sparkbug. One firefly escapes in the confusion.', 'Pip hoots a warning. Too late. Sparkbug!']);
+          b.x = Math.random() * 90 + 5; b.y = Math.random() * 80 + 10;
+        } else {
+          Sound.sfx('sparkle');
+          caught++;
+          el.remove(); bugs.splice(bugs.indexOf(b), 1);
+          $('#ff-msg').textContent = caught >= NEED ? 'All three lanterns are glowing!' : pickOne(['Got one!', 'Into the jar.', 'Gentle... gentle... gotcha.', 'It blinks happily in the jar.']);
+          if (bugs.filter((x) => !x.bad).length < 4 && caught + bugs.filter((x) => !x.bad).length < NEED + 2) spawn(false);
+        }
+        update();
+        if (caught >= NEED) { alive = false; cancelAnimationFrame(raf); win(onWin, 1000); }
+      });
+      field.appendChild(el);
+      bugs.push(b);
+    };
+    const update = () => $$('.lantern').forEach((l, i) => {
+      const n = Math.max(0, Math.min(4, caught - i * 4));
+      l.classList.toggle('lit', n === 4);
+      l.style.setProperty('--fill', n / 4);
+      $('span', l).textContent = `${n}/4`;
+    });
+    for (let i = 0; i < 7; i++) spawn(false);
+    spawn(true); spawn(true);
+    const frame = (now) => {
+      if (!$('#ff-field')) { alive = false; return; }
+      const dt = Math.min(.05, (now - last) / 1000); last = now;
+      bugs.forEach((b) => {
+        b.t += dt;
+        b.vx += (Math.random() - .5) * 40 * dt; b.vy += (Math.random() - .5) * 40 * dt;
+        b.vx = Math.max(-22, Math.min(22, b.vx)); b.vy = Math.max(-18, Math.min(18, b.vy));
+        b.x += b.vx * dt; b.y += b.vy * dt;
+        if (b.x < 3 || b.x > 97) b.vx *= -1; if (b.y < 5 || b.y > 95) b.vy *= -1;
+        b.x = Math.max(3, Math.min(97, b.x)); b.y = Math.max(5, Math.min(95, b.y));
+        b.el.style.left = b.x + '%'; b.el.style.top = b.y + '%';
+        b.el.style.opacity = b.bad ? 1 : .55 + .45 * Math.abs(Math.sin(b.t * 2.2));
+      });
+      raf = requestAnimationFrame(frame);
+    };
+    raf = requestAnimationFrame(frame);
+  }
+
+  // ---------------------------------------------------------------- star map
+  function starmap(onWin) {
+    const wr = [[1150, 112], [1130, 150], [1170, 190], [1210, 230], [1250, 270], [1236, 300], [1270, 296], [1200, 132]].map(([x, y]) => [Math.round((x - 1110) * 1.4 + 110), Math.round((y - 100) * 1.05 + 22)]);
+    const dand = [[200, 130]].concat([0, 1, 2, 3, 4, 5].map((i) => [Math.round(200 + Math.cos(i * Math.PI / 3 - Math.PI / 2) * 72), Math.round(130 + Math.sin(i * Math.PI / 3 - Math.PI / 2) * 72)]));
+    const C = [
+      { name: 'The Lantern', pts: [[180, 60], [230, 60], [255, 125], [205, 180], [155, 125]], edges: [[0, 1], [1, 2], [2, 3], [3, 4], [4, 0]] },
+      { name: 'The Dandelion', pts: dand, edges: [[0, 1], [0, 2], [0, 3], [0, 4], [0, 5], [0, 6]] },
+      { name: 'The Wrench', bonus: true, pts: wr, edges: [[0, 1], [1, 2], [2, 3], [3, 4], [4, 5], [4, 6], [7, 2]] },
+    ];
+    let ci = 0, done = [], selS = null, decoys = [];
+    const key = (a, b) => (a < b ? `${a}-${b}` : `${b}-${a}`);
+    const makeDecoys = () => { decoys = []; while (decoys.length < 9) { const p = [20 + Math.random() * 360, 15 + Math.random() * 230]; if (C[ci].pts.every((q) => Math.hypot(q[0] - p[0], q[1] - p[1]) > 34) && decoys.every((q) => Math.hypot(q[0] - p[0], q[1] - p[1]) > 30)) decoys.push(p); } };
+    G.ui.modal('Star Map Calibration', '<div class="starmap"></div>', { cls: 'star-modal' });
+    makeDecoys();
+    const draw = (msg) => {
+      const el = $('#modal .starmap');
+      if (!el) return;
+      const c = C[ci];
+      const all = [...c.pts.map((p, i) => ({ p, i })), ...decoys.map((p, j) => ({ p, i: 100 + j }))];
+      const thumb = `<svg viewBox="0 0 400 260" class="sm-thumb" aria-hidden="true">${c.edges.map(([a, b]) => `<line x1="${c.pts[a][0]}" y1="${c.pts[a][1]}" x2="${c.pts[b][0]}" y2="${c.pts[b][1]}" stroke="#9fd8ff" stroke-width="6"/>`).join('')}${c.pts.map(([x, y]) => `<circle cx="${x}" cy="${y}" r="9" fill="#eafcff"/>`).join('')}</svg>`;
+      el.innerHTML = `<p class="bolt-msg">${esc(msg)}</p>
+        <div class="sm-wrap"><div class="sm-ref"><b>${c.name}</b>${thumb}<span>${done.length}/${c.edges.length} lines</span></div>
+        <div class="sm-sky"><svg viewBox="0 0 400 260" aria-hidden="true">
+          ${done.map((k) => { const [a, b] = k.split('-').map(Number); return `<line x1="${c.pts[a][0]}" y1="${c.pts[a][1]}" x2="${c.pts[b][0]}" y2="${c.pts[b][1]}" stroke="#9fd8ff" stroke-width="2.5"/>`; }).join('')}
+        </svg>${all.map(({ p, i }) => `<button class="star ${selS === i ? 'sel' : ''}" data-s="${i}" style="left:${p[0] / 4}%;top:${p[1] / 2.6}%" aria-label="star"></button>`).join('')}</div></div>`;
+      $$('[data-s]', el).forEach((b) => b.addEventListener('click', () => {
+        const i = +b.dataset.s;
+        if (selS === null) { selS = i; Sound.sfx('click'); draw(msg); return; }
+        if (selS === i) { selS = null; draw(msg); return; }
+        const k = key(selS, i);
+        const ok = selS < 100 && i < 100 && c.edges.some(([a, bb]) => key(a, bb) === k);
+        selS = null;
+        if (ok && !done.includes(k)) {
+          done.push(k); Sound.sfx('sparkle');
+          if (done.length === c.edges.length) {
+            if (ci === C.length - 1) { draw('Racket: "SEE? A wrench. I told you. ...Okay, nav\'s calibrated. Good work, lynx."'); win(onWin, 1400); return; }
+            ci++; done = []; makeDecoys();
+            draw(C[ci].bonus ? 'Racket: "One more. Top right. The Wrench." Crystal: "That is NOT a real constellation." Racket: "It is now."' : `${C[ci - 1].name} locked in! Next: ${C[ci].name}.`);
+            return;
+          }
+          draw(msg);
+        } else if (ok) { draw('Already connected those two.'); } else {
+          Sound.sfx('error');
+          draw(pickOne(['The line fizzles. Those two aren\'t part of it.', 'Racket: "That star\'s a decoy. Or a satellite. Or a bug on the lens."', 'Nope. Check the shape on the left.']));
+        }
+      }));
+    };
+    draw('Rebuild each constellation: tap one star, then another, to draw a line. Copy the shape on the left.');
+  }
+
+  // ---------------------------------------------------------------- root maze (rotate the root tiles)
+  function roots(onWin) {
+    const R = 5, Cc = 6, N = 1, E = 2, S = 4, Wd = 8;
+    const rot = (m) => ((m << 1) | (m >> 3)) & 15;
+    const DIR = { [N]: [-1, 0, S], [E]: [0, 1, Wd], [S]: [1, 0, N], [Wd]: [0, -1, E] };
+    let grid, r0, r1;
+    const build = () => {
+      r0 = Math.random() * R | 0; r1 = Math.random() * R | 0;
+      grid = Array.from({ length: R }, () => Array(Cc).fill(0));
+      let r = r0, enter = Wd;
+      for (let c = 0; c < Cc; c++) {
+        const target = c === Cc - 1 ? r1 : Math.random() * R | 0;
+        while (r !== target) { const d = target > r ? S : N; grid[r][c] = enter | d; enter = d === S ? N : S; r += d === S ? 1 : -1; }
+        grid[r][c] = enter | E; enter = Wd;
+      }
+      for (let rr = 0; rr < R; rr++) for (let c = 0; c < Cc; c++) if (!grid[rr][c]) grid[rr][c] = [5, 10, 3, 6, 12, 9, 7, 11][Math.random() * 8 | 0];
+      for (let rr = 0; rr < R; rr++) for (let c = 0; c < Cc; c++) { let k = Math.random() * 4 | 0; while (k--) grid[rr][c] = rot(grid[rr][c]); }
+    };
+    const flow = () => {
+      const lit = Array.from({ length: R }, () => Array(Cc).fill(false));
+      if (!(grid[r0][0] & Wd)) return { lit, out: false };
+      const q = [[r0, 0]]; lit[r0][0] = true;
+      while (q.length) {
+        const [r, c] = q.shift();
+        [N, E, S, Wd].forEach((d) => {
+          if (!(grid[r][c] & d)) return;
+          const [dr, dc, back] = DIR[d], nr = r + dr, nc = c + dc;
+          if (nr < 0 || nr >= R || nc < 0 || nc >= Cc || lit[nr][nc] || !(grid[nr][nc] & back)) return;
+          lit[nr][nc] = true; q.push([nr, nc]);
+        });
+      }
+      return { lit, out: lit[r1][Cc - 1] && (grid[r1][Cc - 1] & E) };
+    };
+    do { build(); } while (flow().out);
+    let moves = 0;
+    G.ui.modal('Root Maze', '<div class="rootgame"></div>', { cls: 'root-modal' });
+    const tile = (m, on) => `<svg viewBox="0 0 60 60" aria-hidden="true">${[[N, '30,30 30,0'], [E, '30,30 60,30'], [S, '30,30 30,60'], [Wd, '30,30 0,30']].filter(([d]) => m & d).map(([, pts]) => `<polyline points="${pts}" stroke="${on ? '#7affe4' : '#6a4a30'}" stroke-width="${on ? 12 : 14}" stroke-linecap="round" fill="none"/>`).join('')}<circle cx="30" cy="30" r="${on ? 8 : 7}" fill="${on ? '#eafffb' : '#4a3424'}"/></svg>`;
+    const draw = (msg) => {
+      const el = $('#modal .rootgame');
+      if (!el) return;
+      const { lit, out } = flow();
+      el.innerHTML = `<p class="bolt-msg">${esc(msg)}</p>
+        <div class="rg-wrap"><div class="rg-src" style="top:${(r0 + .5) / R * 100}%">✦</div>
+        <div class="rg-grid">${grid.map((row, r) => row.map((m, c) => `<button class="rt ${lit[r][c] ? 'on' : ''}" data-r="${r}" data-c="${c}" aria-label="root tile">${tile(m, lit[r][c])}</button>`).join('')).join('')}</div>
+        <div class="rg-exit ${out ? 'on' : ''}" style="top:${(r1 + .5) / R * 100}%">◉</div></div>
+        <p class="muted small">Tap a tile to turn it. Moves: ${moves}</p>`;
+      $$('.rt', el).forEach((b) => b.addEventListener('click', () => {
+        const r = +b.dataset.r, c = +b.dataset.c;
+        grid[r][c] = rot(grid[r][c]); moves++; Sound.sfx('click');
+        if (flow().out) { draw('The light runs all the way through! The roots shiver and pull apart.'); win(onWin, 1200); return; }
+        draw(msg);
+      }));
+    };
+    draw('Turn the roots so the light flows from the glowing seed on the left to the exit on the right.');
+  }
+
+  // Bolt Bin III: springs join the party
+  const spring = `<svg viewBox="-30 -30 60 90" aria-hidden="true"><path d="M-12,-14 L12,-8 L-12,-2 L12,4 L-12,10 L12,16 L-12,22 L12,28 L-12,34 L12,40" stroke="#c9d0d6" stroke-width="4" fill="none" stroke-linecap="round"/></svg>`;
+  const boltsBase = bolts;
+  function boltsAll(round, onWin) {
+    if (round !== 3) return boltsBase(round, onWin);
+    const kinds = ['S', 'S', 'L', 'L', 'N', 'N', 'W', 'W', 'P', 'P', 'P'];
+    const bins = [{ id: 'S', label: 'Small' }, { id: 'L', label: 'Large' }, { id: 'N', label: 'Nuts' }, { id: 'W', label: 'Washers' }, { id: 'P', label: 'Springs' }];
+    const items = shuffle([...kinds.map((k, i) => ({ id: i, k, done: false })), { id: 98, k: 'sock' }, { id: 99, k: 'sock' }]);
+    let selId = null;
+    G.ui.modal('Bolt Bin III: Return of the Sock', '<div class="boltgame"></div>', { cls: 'bolt-modal' });
+    const art = (k) => (k === 'sock' ? Art.sock : k === 'N' ? Art2.nut : k === 'W' ? Art2.washer : k === 'P' ? spring : Art.bolt(k));
+    const draw = (msg) => {
+      const el = $('#modal .boltgame');
+      if (!el) return;
+      const need = {}, have = {};
+      kinds.forEach((k) => { need[k] = (need[k] || 0) + 1; });
+      items.forEach((b) => { if (b.done) have[b.k] = (have[b.k] || 0) + 1; });
+      el.innerHTML = `<p class="bolt-msg">${esc(msg)}</p>
+        <div class="pile">${items.filter((b) => !b.done).map((b) => `<button class="bolt ${selId === b.id ? 'sel' : ''}" data-b="${b.id}" aria-label="${b.k}">${art(b.k)}</button>`).join('')}</div>
+        <div class="bins b5">${bins.map((b) => `<button class="bin" data-bin="${b.id}"><span class="bin-label">${b.label}</span><span class="bin-count">${have[b.id] || 0}/${need[b.id]}</span></button>`).join('')}</div>`;
+      $$('[data-b]', el).forEach((btn) => btn.addEventListener('click', () => {
+        const it = items.find((x) => x.id === +btn.dataset.b);
+        if (it.k === 'sock') { Sound.sfx('error'); draw('Racket: "TWO socks now. They\'re breeding. Don\'t touch them. Let nature take its course."'); return; }
+        selId = it.id; Sound.sfx('click'); draw(msg);
+      }));
+      $$('[data-bin]', el).forEach((btn) => btn.addEventListener('click', () => {
+        if (selId == null) { draw('Pick something out of the pile first.'); return; }
+        const it = items.find((x) => x.id === selId);
+        if (it.k === btn.dataset.bin) {
+          it.done = true; selId = null; Sound.sfx(it.k === 'P' ? 'spark' : 'clank');
+          if (!items.some((x) => x.k !== 'sock' && !x.done)) { draw('Sorted! Even the springs behaved.'); win(onWin); return; }
+          draw(pickOne(['Clink.', 'Boing. (That was a spring.)', 'Satisfying.', 'Racket nods. Twice, even.']));
+        } else { Sound.sfx('error'); draw(it.k === 'P' ? 'Racket: "Springs go with springs. They get lonely. And bouncy."' : WRONG[it.k] || 'Wrong bin.'); }
+      }));
+    };
+    draw('Springs, nuts, washers and bolts. Tap one, then its bin.');
+  }
+
+  return { bolts: boltsAll, tune, wires, breakers, gasket, fireflies, starmap, roots };
 })();

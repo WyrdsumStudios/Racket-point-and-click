@@ -135,6 +135,7 @@ D.vexIntro3 = {
 D.vexHub = (G) => {
   const S = G.S, F = S.flags;
   const greet = G.tmp.vexAgain ? pick(["What else?", "Anything else, kid?"])
+    : F.reconciled ? pick(["Kid! My favourite meddler.", "If you're here to make me hug anyone else, I'm busy."])
     : F.craneLifted ? pick(["Bertha's purring. You're alright, kid.", "My favourite crane mechanic. Don't tell Racket I said that."])
       : pick(["What do you want?", "Kid. You're back.", "Make it quick, the floodlights cost money."]);
   G.tmp.vexAgain = false;
@@ -147,7 +148,11 @@ D.vexHub = (G) => {
       { t: "Can I borrow your cutting torch?", if: () => !F.torchGot && !G.has('gilded_hubcap'), go: 'vexTorchAsk' },
       { t: "I found a gold hubcap for your wall.", if: () => !F.torchGot && G.has('gilded_hubcap'), go: 'vexTrade' },
       { t: "Where do I get fuel for this torch?", if: () => F.torchGot && !F.torchFueled, say: [V('smug', "JunkNet. Seller scrapqueen_vex. Great seller. Five stars. Very attractive."), V('neutral', "Thirty credits. Racket's job board'll get you there.")], go: back },
-      { t: "What's the story with you and Racket?", go: 'vexLore' },
+      { t: "I found something from the Long Shot.", if: () => G.has('flight_recorder'), go: 'vexRecorder' },
+      { t: "Is this... your lucky washer?", if: () => G.has('lucky_washer'), run: (G) => G.giveWasher() },
+      { t: "Why do you want stuff from the Long Shot wreck?", if: () => F.phase2 && !F.recorderGiven, say: [V('neutral', "...It was our ship. Mine and Racket's. Went down in those woods twenty years ago."), V('annoyed', "I don't do the woods. Too many memories, not enough hubcaps."), V('neutral', "If there's anything left in that cockpit, I want it. Bring it to me and I'll make it worth your while.")], go: back },
+      { t: "What's the story with you and Racket?", if: () => !F.reconciled, go: 'vexLore' },
+      { t: "So... you and Racket are good now?", if: () => F.reconciled, say: [V('smug', "We're FINE. We had one hug. It was terrible. We'll never speak of it."), V('neutral', "...He called me yesterday. To complain about a bolt. It was the nicest phone call I've had in years.")], go: back },
       { t: "Are you... scrapmonger_88?", if: () => S.sold.length > 0 && !S.talked.alias, go: 'vexAlias' },
       { t: "See you around.", say: [V('smug', pick(["Don't touch anything on your way out.", "Mind the dog. There's no dog. Mind it anyway."]))] },
     ],
@@ -187,7 +192,7 @@ DATA.vexLore = [
     V('neutral', "Racket and me? We ran a salvage crew. Best on this side of the moon."),
     V('smug', "He flew. I haggled. We made a lot of money and spent it on really bad food."),
     C('surprised', "So what happened?"),
-    V('neutral', "His ship went down over the ridge. He hasn't told you."),
+    V('neutral', "His ship went down over the ridge. I was on it. ...Until I wasn't. He hasn't told you."),
     V('neutral', "...Course he hasn't. Not my story, kid."),
   ],
   [
@@ -333,8 +338,10 @@ D.roof2 = (G) => {
   const t = G.tier();
   return {
     lines: [
-      R('soft', "I was hauling cargo. With... doesn't matter. Somebody I trusted."),
-      R('soft', "Nav went out over the ridge. Alarms everywhere. I told her to bail, and she—"),
+      R('soft', "I was hauling cargo. With Vex, if you can believe it. Back when we could stand each other."),
+      R('soft', "Nav went out over the ridge. Alarms everywhere. I told her to bail."),
+      R('smirk', "She did. Landed in a tree, swearing the whole way down. She's fine. Obviously. You've met her."),
+      R('soft', "I stayed with the ship. Rode her down. Alone. And Vex and me... we never really talked about it. After."),
       N("He stops. His ears go flat. For a long moment he just looks at the trees."),
       R('grump', "...You see that cluster up there? Looks like a wrench."),
       C('smug', "That looks nothing like a wrench."),
@@ -353,5 +360,5 @@ DATA.idle2 = [
   ["Junkyard dust in my fur. Again. Thanks, Vex.", "*inspects the Dandelion's engine, nods approvingly*"],
   ["Hey lynx. Bertha's really running? Huh. Good job.", "*whistles, badly*"],
   ["You're getting good at this, lynx. Don't let it go to your head. Let it go to your hands.", "*hums the song from the radio*"],
-  ["Hey, sweetheart— lynx. Pass the torch."],
+  ["Hey lynx. Pass the torch. Thanks, partner.", "*whistles the radio song, nearly in tune*"],
 ];

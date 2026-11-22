@@ -15,11 +15,11 @@
   // ---------------------------------------------------------------------------
   const fresh = () => ({
     v: 2, scene: 'crash', inv: ['datapad'], flags: {}, friend: 0, credits: 0,
-    parts: { casing: false, crystal: false, wiring: false, nozzles: false, gasket: false },
-    repairs: { fuel: false, thrusters: false },
-    jobs: { radio: 'hidden', bolts: 'hidden', scrap: 'hidden', bolts2: 'hidden', tune: 'hidden', wires: 'hidden' },
+    parts: { casing: false, crystal: false, wiring: false, nozzles: false, gasket: false, starcrystal: false, chip: false },
+    repairs: { fuel: false, thrusters: false, nav: false },
+    jobs: { radio: 'hidden', bolts: 'hidden', scrap: 'hidden', bolts2: 'hidden', tune: 'hidden', wires: 'hidden', bolts3: 'hidden' },
     sold: [], talked: {}, piles: { tires: 0, appliances: 0, shiny: 0 },
-    pos: { crash: 560, garage: 820, junkyard: 300, woods: 1250, roof: 800 }, station: 0,
+    pos: { crash: 560, garage: 820, junkyard: 300, woods: 1250, roof: 800, deep: 300, glade: 1250, wreck: 300 }, station: 0, played: {},
   });
   let S = fresh();
   let sel = null;            // selected inventory item
@@ -39,14 +39,15 @@
       const f = fresh();
       return {
         ...f, ...d, flags: { ...d.flags }, parts: { ...f.parts, ...d.parts }, repairs: { ...f.repairs, ...d.repairs },
-        jobs: { ...f.jobs, ...d.jobs }, pos: { ...f.pos, ...d.pos }, talked: { ...d.talked }, piles: { ...f.piles, ...d.piles }, sold: d.sold || [],
+        jobs: { ...f.jobs, ...d.jobs }, pos: { ...f.pos, ...d.pos }, talked: { ...d.talked }, piles: { ...f.piles, ...d.piles }, sold: d.sold || [], played: { ...d.played },
       };
     } catch (e) { return null; }
   }
   // Bring older saves forward (Phase 1 saves keep working).
   function migrate() {
     if (S.flags.phase1) ['bolts2', 'tune', 'wires'].forEach((j) => { if (S.jobs[j] === 'hidden') S.jobs[j] = 'open'; });
-    S.v = 2;
+    if (S.flags.phase2 && S.jobs.bolts3 === 'hidden') S.jobs.bolts3 = 'open';
+    S.v = 3;
   }
 
   // ---------------------------------------------------------------------------
@@ -79,6 +80,7 @@
     addCredits(n) { S.credits += n; Sound.sfx('coin'); floatText(`+${n} cr`); updateHud(); save(); },
     introDone, finishRadio, returnItem, nightScene, phaseEnd,
     vexIntroDone, tradeHubcap, fireThrusters, roofScene,
+    giveWasher, wreckStoryDone, reconcileScene, reconcileDone, sporesDone, patchScene, wearPatch, dlg: (id) => dlg(id),
   };
   window.G = G;
 
@@ -90,9 +92,11 @@
   const mittsOnCouch = () => !S.flags.mittsTaken || S.flags.mittsReturned;
   const racketAtJunk = () => S.scene === 'junkyard' && !S.flags.racketLeftJunk;
   // Racket's spot: the bench normally, the couch during noodle night, by the crane on the first junkyard trip.
-  const rX = () => (S.scene === 'junkyard' ? 600 : S.flags.noodles && !S.flags.phase1 ? 150 : 1090);
+  const rX = () => (S.scene === 'junkyard' ? 600 : S.scene === 'wreck' ? 1300 : S.flags.noodles && !S.flags.phase1 ? 150 : 1090);
+  const vexX = () => (S.scene === 'garage' ? 640 : 1395);
   const VEX_X = 1395;
-  const BENCH_ITEMS = ['cell_casing', 'charge_crystal', 'wiring', 'thruster_nozzles', 'gasket', 'copper_sheet', 'ember_resin'];
+  const BENCH_ITEMS = ['cell_casing', 'charge_crystal', 'wiring', 'thruster_nozzles', 'gasket', 'copper_sheet', 'ember_resin', 'star_crystal', 'nav_chip', 'broken_scanner', 'resonance_coil'];
+  const P3 = () => !!S.flags.phase2;
 
   const SCENES = {
     garage: {
@@ -108,10 +112,13 @@
         { id: 'mug', label: 'Mug', hit: [640, 460, 44, 60], walk: 640, draw: () => Art.garage.mug(), act: actMug },
         { id: 'pegboard', label: () => (pryOnBoard() ? 'Pegboard (pry bar)' : 'Pegboard'), hit: [690, 172, 324, 240], walk: 900, draw: () => Art.garage.pegboard(S, pryOnBoard()), act: actPegboard },
         { id: 'workbench', label: 'Workbench', hit: [680, 420, 258, 200], walk: 840, accepts: BENCH_ITEMS, draw: () => Art.garage.workbench(S), act: openWorkbench },
+        { id: 'drawer', label: 'Workbench drawer', show: () => P3() && !F().scannerTaken, hit: [852, 514, 150, 40], walk: 900, draw: () => Art3.drawer(S), act: actDrawer },
+        { id: 'floorboard', label: 'Loose floorboard', show: () => F().scannerFixed && !F().sporesTaken, hit: [430, 756, 130, 46], walk: 500, draw: () => Art3.hidden.floorboard(), act: actFloorboard },
         { id: 'bolts', label: 'Bolt bin', hit: [940, 428, 78, 64], walk: 940, draw: () => Art.garage.boltBin(S.jobs.bolts === 'done' && (!F().phase1 || S.jobs.bolts2 === 'done')), act: actBolts },
         { id: 'couch', label: () => (mittsOnCouch() && !F().crystalTaken ? 'Couch (oven mitts?)' : F().phase1 && !F().cupTaken ? 'Couch (noodle cups)' : 'Couch'), hit: [40, 550, 384, 180], walk: 250, draw: () => Art.garage.couch(S, mittsOnCouch()), act: actCouch },
         { id: 'ship', label: 'The Dandelion', show: () => F().shipTowed, hit: [1186, 360, 394, 290], walk: 1290, draw: () => Art.garage.bayShip(S, G.tmp.testFire), act: () => openShip() },
         { id: 'racket', label: 'Racket', hit: () => [rX() - 68, 250, 140, 550], walk: () => (rX() > 600 ? 945 : 330), anyItem: true, draw: () => `<g transform="translate(${rX()},800)">${Art.racket(G.tmp.testFire ? 'laugh' : G.rMood())}</g>`, act: actRacket },
+        { id: 'vexG', label: 'Vex', show: () => !!G.tmp.vexVisit, hit: [580, 250, 130, 560], walk: 760, draw: () => `<g transform="translate(640,806) scale(-1,1)">${Art2.vex('neutral')}</g>`, act: () => say('v', "Don't mind me. Just standing in a tree house.") },
         { id: 'exit', label: 'To the crash site', hit: [1440, 740, 150, 110], walk: 1470, draw: () => Art.garage.exit(), act: () => go('crash') },
       ],
       onEnter() { if (!F().metRacket) setTimeout(() => dlg('intro'), 500); },
@@ -130,6 +137,8 @@
         { id: 'scrap', label: 'Bent hull panel', show: () => !F().scrapTaken, hit: [304, 700, 130, 64], walk: 372, draw: () => Art.crash.hullScrap(), act: actScrap },
         { id: 'debris', label: 'Wreckage', hit: [1040, 596, 220, 114], walk: 1110, accepts: ['pry_bar'], draw: () => Art.crash.debris(!F().casingTaken), act: actDebris },
         { id: 'antenna', label: 'Folded antenna', show: () => !F().antennaTaken, hit: [1256, 640, 110, 92], walk: 1300, draw: () => Art.crash.antenna(), act: actAntenna },
+        { id: 'meteorite', label: 'Something buried', show: () => F().scannerFixed && !F().meteoriteTaken, hit: [890, 750, 100, 70], walk: 940, draw: () => Art3.hidden.meteorite(), act: () => findHidden('meteoriteTaken', 'meteorite', 'The scanner pings... a meteorite! Buried right by my crater. Fellow falling-from-the-sky enjoyer.') },
+        { id: 'sprouts', label: 'Mushroom sprouts', show: () => !!F().mushroomsPlanted, hit: [600, 740, 140, 60], walk: 670, draw: () => `<g>${[620, 650, 680, 710].map((x, i) => `<g transform="translate(${x},${790 - (i % 2) * 8})"><rect x="-2" y="-14" width="4" height="14" fill="#e8e2d0"/><path d="M-9,-12 Q0,-26 9,-12Z" fill="#c0392b"/><circle cx="-3" cy="-16" r="1.5" fill="#fff"/></g>`).join('')}</g>`, act: () => say('c', "Racket's mushroom patch, replanted. Tiny red caps already. He visits them every morning and pretends he's just 'checking the crater'.") },
         { id: 'exit', label: () => (F().metRacket ? "To Racket's garage" : 'Light through the trees'), hit: [1420, 400, 180, 290], walk: 1470, draw: () => Art.crash.exit(), act: actCrashExit },
       ],
       onEnter() {},
@@ -148,6 +157,7 @@
         { id: 'appliances', label: 'Appliance heap', hit: [980, 500, 210, 220], walk: 1080, draw: () => Art2.junk.appliances(pileLeft('appliances')), act: () => actPile('appliances') },
         { id: 'booth', label: 'Hubcap wall', hit: [1214, 350, 150, 100], walk: 1180, draw: () => Art2.junk.booth(S), act: actHubcapWall },
         { id: 'vex', label: 'Scrapqueen Vex', hit: [1330, 250, 130, 560], walk: 1205, anyItem: true, draw: () => `<g transform="translate(${VEX_X},806)">${Art2.vex(F().craneLifted ? 'smug' : 'neutral')}</g>`, act: actVex },
+        { id: 'washer', label: 'Something gold', show: () => F().scannerFixed && !F().washerTaken, hit: [600, 740, 80, 60], walk: 640, draw: () => Art3.hidden.washer(), act: () => findHidden('washerTaken', 'lucky_washer', 'The scanner pings... a gold washer, trodden into the dirt. Hang on. Vex wears washers.') },
         { id: 'racketJ', label: 'Racket', show: racketAtJunk, hit: [532, 250, 140, 550], walk: 480, draw: () => `<g transform="translate(600,806)">${Art.racket('grump')}</g>`, act: () => say('r', "Don't look at me. This is Vex's circus.") },
         { id: 'exit', label: "Back to Racket's garage", hit: [20, 740, 150, 110], walk: 110, draw: () => Art2.junk.exit(), act: () => go('garage') },
       ],
@@ -159,8 +169,9 @@
       entry: [1440, 1250],
       hs: [
         { id: 'ember', label: 'Ember-bark tree', hit: [100, 380, 220, 330], walk: 300, accepts: ['cutting_torch', 'noodle_cup'], draw: () => Art2.woods.ember(S), act: actEmber },
-        { id: 'log', label: 'Fallen tree', hit: [420, 560, 840, 160], walk: 820, accepts: ['cutting_torch'], draw: () => Art2.woods.log(S), act: actLog },
-        { id: 'path', label: 'Dark path', hit: [740, 440, 160, 110], walk: 820, act: () => say('c', 'Two yellow eyes blink at me from the dark. Something growls. I wave. It growls again, but... friendlier?') },
+        { id: 'log', label: 'Fallen tree', hit: [420, 560, 840, 160], walk: 820, accepts: ['cutting_torch'], draw: () => (F().logCut ? Art3.logCut() : Art2.woods.log(S)), act: actLog },
+        { id: 'toDeep', label: 'Into the Deep Woods', show: () => !!F().logCut, hit: [740, 470, 160, 140], walk: 815, draw: () => Art3.toDeep(), act: () => go('deep') },
+        { id: 'path', label: 'Dark path', show: () => !F().logCut, hit: [740, 440, 160, 110], walk: 820, act: () => say('c', 'Two yellow eyes blink at me from the dark. Something growls. I wave. It growls again, but... friendlier?') },
         { id: 'critter', label: 'Fuzzy critter', hit: [1006, 518, 70, 70], walk: 1040, draw: () => Art2.woods.critter(), act: actWoodsCritter },
         { id: 'flowers', label: 'Bell flowers', hit: [1320, 700, 170, 110], walk: 1400, draw: () => Art2.woods.flowers(), act: () => { Sound.sfx('sparkle'); say('c', 'Bell-shaped flowers. When the wind blows, they actually chime. I love this moon.'); } },
         { id: 'exit', label: 'Back to the crash site', hit: [1440, 740, 150, 110], walk: 1470, draw: () => Art2.woods.exit(), act: () => go('crash') },
@@ -168,6 +179,49 @@
       onEnter() {
         if (!F().woodsSeen) { F().woodsSeen = true; save(); setTimeout(() => say('c', "The edge of the Deep Woods. It's darker in there. And it's... humming?"), 300); }
       },
+    },
+    deep: {
+      name: 'The Deep Woods', floor: 820, amb: 'forest',
+      bg: () => Art3.deepBg(), fg: () => '',
+      entry: (from) => (from === 'glade' ? [820, 820] : from === 'wreck' ? [1440, 1200] : [60, 300]),
+      hs: [
+        { id: 'mossback', label: 'Sleeping mossback', hit: [80, 590, 290, 160], walk: 380, draw: () => Art3.deep.mossback(), act: actMossback },
+        { id: 'drifters', label: 'Drifters', hit: [940, 200, 260, 200], walk: 1060, draw: () => Art3.deep.drifters(), act: () => { Sound.sfx('sparkle'); say('c', 'Floating jelly-creatures, drifting like slow balloons. One bumps my nose. It feels like a sneeze made of light.'); } },
+        { id: 'pip', label: () => (F().pipMet ? 'Pip' : 'Purple critter'), show: () => !F().pipFed, hit: [350, 380, 100, 90], walk: 400, accepts: ['ration_paste'], draw: () => Art3.deep.pipBranch(false), act: actPip },
+        { id: 'branch', label: 'Branch', show: () => !!F().pipFed, hit: [220, 430, 240, 50], walk: 340, draw: () => Art3.deep.pipBranch(true), act: () => say('c', "Pip's old branch. Pip has moved to the hollow log and is guarding it with great seriousness.") },
+        { id: 'log', label: () => (F().pipFed ? 'Hollow log (shortcut)' : 'Hollow log'), hit: [470, 680, 240, 90], walk: 560, draw: () => Art3.deep.hollowLog(F().pipFed), act: actHollowLog },
+        { id: 'north', label: () => (F().gladeLit ? 'Lantern path (to the glade)' : 'Dark path'), hit: [690, 410, 260, 230], walk: 820, act: actNorthPath, draw: () => Art3.deep.northPath(F().gladeLit) },
+        { id: 'roots', label: () => (F().rootsCleared ? 'Path east (old wreck)' : 'Tangled roots'), hit: [1260, 390, 310, 330], walk: 1300, act: actRoots, draw: () => Art3.deep.roots(F().rootsCleared) },
+        { id: 'exit', label: 'Back to the woods edge', hit: [20, 780, 150, 100], walk: 110, draw: () => Art3.deep.exit(), act: () => go('woods') },
+      ],
+      onEnter() { if (!F().deepSeen) { F().deepSeen = true; save(); setTimeout(() => dlg('deepIntro'), 300); } },
+    },
+    glade: {
+      name: 'The Glade', floor: 820, amb: 'forest',
+      bg: () => Art3.gladeBg(), fg: () => '',
+      entry: [1440, 1250],
+      hs: [
+        { id: 'tree', label: 'The ancient glowing tree', hit: [620, 260, 360, 380], walk: 760, act: actElderTree },
+        { id: 'crystals', label: 'Crystals in the roots', show: () => !F().starTaken, hit: [860, 630, 200, 100], walk: 960, draw: () => Art3.glade.crystals(S), act: actStarCrystals },
+        { id: 'crystals2', label: 'Crystals in the roots', show: () => !!F().starTaken, hit: [860, 630, 200, 100], walk: 960, draw: () => Art3.glade.crystals(S), act: () => say('c', 'The other crystals hum softly. The tree only gave me the one I needed.') },
+        { id: 'pool', label: 'Still pool', hit: [130, 700, 380, 110], walk: 420, act: () => say('c', 'The pool reflects the blossoms so perfectly it looks like a second tree, growing down into the stars.') },
+        { id: 'exit', label: 'Back to the Deep Woods', hit: [1440, 740, 150, 110], walk: 1470, draw: () => Art3.glade.exit(), act: () => go('deep') },
+      ],
+      onEnter() { if (!F().gladeSeen) { F().gladeSeen = true; save(); setTimeout(() => dlg('gladeIntro'), 300); } },
+    },
+    wreck: {
+      name: 'The Old Wreck', floor: 820, amb: 'forest',
+      bg: () => Art3.wreckBg(), fg: () => '',
+      entry: [60, 300],
+      hs: [
+        { id: 'cockpit', label: 'Cockpit', hit: [220, 340, 250, 210], walk: 380, draw: () => Art3.wreck.cockpit(S), act: actCockpit },
+        { id: 'nameplate', label: 'Nameplate', hit: [596, 330, 240, 64], walk: 700, draw: () => Art3.wreck.nameplate(), act: () => say('c', F().wreckStory ? 'LONG SHOT. Best ship he ever flew.' : 'LONG SHOT. ...Why does that feel familiar?') },
+        { id: 'tally', label: 'Scratches on the hull', hit: [620, 470, 300, 150], walk: 760, draw: () => Art3.wreck.tally(), act: () => say('c', F().wreckStory ? 'Two hundred and some days. And then he stopped counting and started building.' : 'Tally marks. Hundreds of them, in groups of five. Somebody was counting days. A lot of days.') },
+        { id: 'hold', label: 'Cargo hold', hit: [990, 420, 240, 260], walk: 1100, draw: () => Art3.wreck.hold(S), act: actHold },
+        { id: 'racketW', label: 'Racket', show: () => !!G.tmp.racketWreck, hit: [1232, 250, 140, 560], walk: 1150, draw: () => `<g transform="translate(1300,806)">${Art.racket('soft')}</g>`, act: () => {} },
+        { id: 'exit', label: 'Back to the Deep Woods', hit: [20, 780, 150, 100], walk: 110, draw: () => Art3.wreck.exit(), act: () => go('deep') },
+      ],
+      onEnter() { if (!F().wreckSeen) { F().wreckSeen = true; save(); setTimeout(() => dlg('wreckIntro'), 300); } },
     },
     roof: {
       name: 'Garage Roof', floor: 0, amb: 'forest', noCrystal: true,
@@ -183,6 +237,7 @@
   const sceneEl = $('#scene');
   function render() {
     const sc = SCENES[S.scene];
+    Art.state.patch = !!S.flags.patch;
     let h = sc.bg();
     for (const hs of sc.hs) {
       if (hs.show && !hs.show()) continue;
@@ -217,7 +272,15 @@
       return `Fix the thrusters: nozzle set, cutting torch, heat-proof gasket (${n}/3).`;
     }
     if (!f.phase2) return 'Enjoy the view.';
-    return 'Phase 2 complete! The Deep Woods are next.';
+    if (!S.repairs.nav) {
+      if (!f.logCut) return 'Cut through the fallen tree at the Woods Edge.';
+      const star = S.parts.starcrystal || G.has('star_crystal'), chip = S.parts.chip || G.has('nav_chip');
+      const n = (star ? 1 : 0) + (f.scannerFixed ? 1 : 0) + (chip ? 1 : 0);
+      if (n === 3) return 'Calibrate and boot the navigation at the workbench.';
+      return `Fix the navigation: star-chart crystal, scanner, nav chip (${n}/3).`;
+    }
+    if (!f.phase3) return 'Talk to Racket.';
+    return 'Phase 3 complete! Hull plating and the engine core are next.';
   }
   function updateHud() {
     $('#loc').textContent = SCENES[S.scene].name;
@@ -264,7 +327,7 @@
     const run = () => {
       const stage = $('#bubbles');
       $$(`.bubble.${who}`, stage).forEach((b) => b.remove());
-      const pos = who === 'r' ? [rX(), 240] : who === 'v' ? [VEX_X, 230] : who === 'c' ? [S.pos[S.scene], 330] : [800, 870];
+      const pos = who === 'r' ? [rX(), 240] : who === 'v' ? [vexX(), 230] : who === 'c' ? [S.pos[S.scene], 330] : [800, 870];
       const b = document.createElement('div');
       b.className = `bubble ${who}`;
       b.innerHTML = `${NAMES[who] ? `<span class="b-name">${NAMES[who]}</span>` : ''}${esc(text)}`;
@@ -510,12 +573,14 @@
     if (!F().metRacket) { say('c', 'A bin of bolts. And... a sock?'); return; }
     if (S.jobs.bolts !== 'done') { playJob('bolts'); return; }
     if (F().phase1 && S.jobs.bolts2 !== 'done') { playJob('bolts2'); return; }
-    playJob(F().phase1 ? 'bolts2' : 'bolts');
+    if (P3() && S.jobs.bolts3 !== 'done') { playJob('bolts3'); return; }
+    playJob(P3() ? 'bolts3' : F().phase1 ? 'bolts2' : 'bolts');
   }
   function actRacket(item) {
     if (item) {
       if (item === 'pry_bar' && F().casingTaken) { dlg('retPry'); return; }
       if (item === 'oven_mitts' && F().crystalTaken) { dlg('retMitts'); return; }
+      if (item === 'mushroom_spores') { dlg('spores'); return; }
       say('r', DATA.giveRacket[item] || 'What am I supposed to do with that?');
       return;
     }
@@ -556,7 +621,10 @@
     say('c', F().metRacket ? "OW! Hot! Stupidly hot! ...Mitts. He said mitts." : "OW! Hot! I'll need something heat-proof to grab that.");
   }
   function actLocker() {
-    if (F().fuseTaken) { say('c', "Just my ration bars, which have reached a new state of matter. They can stay."); return; }
+    if (F().fuseTaken) {
+      if (P3() && !F().pasteTaken) { F().pasteTaken = true; G.give('ration_paste'); say('c', 'My old ration bars, now officially paste. Someone, somewhere, might want this.'); refresh(); return; }
+      say('c', F().pasteTaken ? 'An empty emergency locker. It did its job.' : "Just my ration bars, which have reached a new state of matter. They can stay."); return;
+    }
     F().fuseTaken = true;
     G.give('spare_fuse');
     say('c', 'My emergency locker! One spare ship-grade fuse... and ration bars that are now a paste.');
@@ -692,11 +760,20 @@
     if (!F().vexMet) { dlg('vexIntro'); return; }
     if (item) {
       if (item === 'gilded_hubcap' && !F().torchGot) { dlg('vexTrade'); return; }
+      if (item === 'flight_recorder') { dlg('vexRecorder'); return; }
+      if (item === 'lucky_washer') { giveWasher(); return; }
       say('v', DATA.giveVex[item] || "I don't buy in person. JunkNet. Different name. Not telling you which.");
       return;
     }
     G.tmp.vexAgain = false;
     dlg('vexHub');
+  }
+  function giveWasher() {
+    G.take('lucky_washer');
+    F().washerGiven = true;
+    say('v', "MY WASHER! Twenty years! I blamed Racket for this! ...Here. Twenty credits. And if you tell anyone I teared up, I'll deny it.");
+    G.addCredits(20);
+    refresh();
   }
   function vexIntroDone() {
     F().vexMet = true;
@@ -729,6 +806,14 @@
     }, 600);
   }
   function actLog() {
+    if (F().logCut) { say('c', 'A neat gap in the fallen tree. The path into the Deep Woods is open.'); return; }
+    if (F().torchFueled && P3()) {
+      busy = true;
+      sceneEl.insertAdjacentHTML('beforeend', Art2.junk.cutting().replace(/800/g, '815').replace(/668/g, '640'));
+      Sound.sfx('torch'); setTimeout(() => Sound.sfx('torch'), 700); setTimeout(() => Sound.sfx('torch'), 1400);
+      setTimeout(() => { Sound.sfx('clank'); F().logCut = true; busy = false; refresh(); say('c', "FSSSSHHH... there! A gap in the log, just wide enough. Here goes nothing."); }, 2200);
+      return;
+    }
     if (F().torchFueled) {
       F().sawPath = true; save();
       say('c', "I could cut through this with the torch... but it's pitch black in there, and something just growled. Tomorrow. Definitely tomorrow.");
@@ -744,6 +829,167 @@
     say('c', WOODS_CRITTER[i % WOODS_CRITTER.length]);
     save();
   }
+
+  // ---------------------------------------------------------------------------
+  // HOTSPOT ACTIONS — PHASE 3
+  // ---------------------------------------------------------------------------
+  function findHidden(flag, item, line) {
+    F()[flag] = true;
+    Sound.sfx('sparkle');
+    G.give(item);
+    say('c', line);
+    refresh();
+  }
+  function actDrawer() {
+    F().scannerTaken = true;
+    G.give('broken_scanner');
+    say('c', 'Under a pile of rags: an old handheld scanner. Cracked lens. Dead as a doornail.');
+    say('r', "Huh. My old scanner. Haven't seen that in years. Needs a resonance coil. Haven't seen one of THOSE since—", 2600);
+    say('r', "...Doesn't matter. Try the woods.", 7600);
+    refresh();
+  }
+  function actFloorboard() {
+    F().sporesTaken = true;
+    Sound.sfx('sparkle');
+    G.give('mushroom_spores');
+    say('c', "The scanner pings under a loose floorboard. Inside: a dented little tin. 'SPORES - MOM'. I should give this to Racket.");
+    refresh();
+  }
+  function sporesDone() {
+    G.take('mushroom_spores');
+    F().sporesGiven = true; F().mushroomsPlanted = true;
+    refresh();
+    setTimeout(() => say('n', 'That evening, Racket replants his mushroom patch at the crash site. He hums the whole time.'), 400);
+  }
+  function actMossback() {
+    const i = S.talked.moss || 0; S.talked.moss = i + 1; save();
+    say('c', ['A huge, mossy creature, snoring gently. Flowers are growing on its back. It does not care about me at all. Respect.', "It opens one sleepy eye, looks at me, and goes back to sleep. I've been approved.", 'Its snores make the fireflies bounce.'][i % 3]);
+  }
+  function actPip(item) {
+    if (!F().pipMet) { F().pipMet = true; save(); }
+    if (item === 'ration_paste' || G.has('ration_paste')) {
+      G.take('ration_paste');
+      F().pipFed = true;
+      Sound.sfx('sparkle');
+      refresh();
+      say('c', "Pip gobbles the ration paste in three bites, hoots, and flutters down to the hollow log. There's a tunnel through it, glowing faintly!");
+      setTimeout(() => say('n', 'Shortcut unlocked: you can now travel straight to the Deep Woods, the Glade and the Old Wreck from the map.'), 3600);
+      return;
+    }
+    const i = S.talked.pip || 0; S.talked.pip = i + 1; save();
+    say('c', [
+      "The little purple critter from my crash site! It unfolds... WINGS? It's an owl. A six-legged owl. I'm calling you Pip.",
+      'Pip sniffs my bag hopefully, then looks at me like I have failed it personally. It wants a snack.',
+      "Pip hoots at the hollow log, then at my bag. Something to eat... I think I left ration paste in my emergency locker.",
+    ][Math.min(i, 2)]);
+  }
+  function actHollowLog() {
+    if (F().pipFed) { say('c', "Pip's shortcut: a glowing tunnel through the log. Now I can travel straight here from the map. Pip looks extremely proud."); return; }
+    say('c', 'A big hollow log. Something glows faintly inside. Too dark to crawl through without a guide.');
+  }
+  function actNorthPath() {
+    if (F().gladeLit) { go('glade'); return; }
+    if (!F().gladeHint) { F().gladeHint = true; say('c', "It's pitch black that way. But the fireflies keep drifting toward it... If I catch enough, I could light the path."); setTimeout(() => startFireflies(), 2600); return; }
+    startFireflies();
+  }
+  function startFireflies() {
+    Mini.fireflies(() => {
+      if (!F().gladeLit) { F().gladeLit = true; G.friend(1); say('c', 'Three firefly lanterns, glowing all the way down the path!'); }
+      else bumpPlayed('fireflies');
+      refresh();
+    });
+  }
+  function actRoots() {
+    if (F().rootsCleared) { go('wreck'); return; }
+    Mini.roots(() => {
+      if (!F().rootsCleared) { F().rootsCleared = true; say('c', 'The roots shiver and pull apart. There is a path east, and something big and metal at the end of it.'); }
+      else bumpPlayed('roots');
+      refresh();
+    });
+  }
+  function actElderTree() {
+    const i = S.talked.elder || 0; S.talked.elder = i + 1; save();
+    say('c', [
+      "I put my paw on the bark. It's warm. And under my paw, I swear, something like a heartbeat. Very slow. Very old.",
+      'Blossoms drift down around me. Each one glows for a moment on the grass before it fades.',
+      'Racket says nobody knows why these old trees grow star crystals. Standing here, I think the tree just likes the sky.',
+    ][i % 3]);
+  }
+  function actStarCrystals() {
+    if (!F().scannerFixed) { say('c', 'Dozens of crystals, all glowing the same soft teal. One of them is a star chart... but which one? I need something that can see inside them.'); return; }
+    F().starTaken = true;
+    Sound.sfx('success');
+    G.give('star_crystal');
+    say('c', "The scanner pings one crystal brighter than all the rest. It slides free as if the tree is handing it to me. Thank you.");
+    refresh();
+  }
+  function actCockpit() {
+    if (!F().wreckStory) {
+      G.tmp.racketWreck = true;
+      render();
+      dlg('wreckStory');
+      return;
+    }
+    if (!F().recorderTaken) {
+      F().recorderTaken = true;
+      G.give('flight_recorder');
+      say('c', "The Long Shot's flight recorder. Still in one piece. Vex should have this.");
+      refresh();
+      return;
+    }
+    say('c', 'The faded photo is still tucked in the visor. Two kids, laughing. I left it where it belongs.');
+  }
+  function actHold() {
+    if (F().coilTaken) { say('c', 'Old crates and moss. Nothing left that still works.'); return; }
+    F().coilTaken = true;
+    Sound.sfx('pickup');
+    G.give('resonance_coil');
+    say('c', F().wreckStory ? "The resonance coil. Still humming, after all these years. Stubborn." : 'In the cargo hold, under moss: a resonance coil, still faintly humming. That is exactly what the scanner needs!');
+    refresh();
+  }
+  function wreckStoryDone() {
+    F().wreckStory = true;
+    G.tmp.racketWreck = false;
+    refresh();
+    say('c', '...I think that was the most he has ever said in one go.', 600);
+  }
+  function reconcileScene() {
+    $('#bubbles').innerHTML = '';
+    G.take('flight_recorder');
+    F().recorderGiven = true;
+    save();
+    card('That evening, a battered truck rattles up to the garage, and somebody very nervous knocks on the bay door.', () => {
+      S.scene = 'garage';
+      S.pos.garage = 900;
+      G.tmp.vexVisit = true;
+      G.tmp.face = 1;
+      refresh();
+      Sound.setAmbience('garage');
+      setTimeout(() => dlg('reconcile'), 500);
+    });
+  }
+  function reconcileDone() {
+    F().reconciled = true;
+    refresh();
+    setTimeout(() => {
+      say('v', "I'm leaving. Before somebody sees me being nice.");
+      setTimeout(() => { G.tmp.vexVisit = false; refresh(); }, 2600);
+    }, 400);
+  }
+  function patchScene() {
+    $('#bubbles').innerHTML = '';
+    card('Later, when the garage is quiet...', () => {
+      S.pos.garage = 900; G.tmp.face = 1;
+      refresh();
+      setTimeout(() => dlg('patch'), 400);
+    });
+  }
+  function wearPatch() {
+    G.take('long_shot_patch');
+    F().patch = true;
+    refresh();
+  }
+  const bumpPlayed = (id) => { S.played[id] = (S.played[id] || 0) + 1; G.addCredits(2); say('r', 'Again? ...Fine. Two credits. Go wild.', 300); };
 
   // ---------------------------------------------------------------------------
   // DIALOGUE RUNNER
@@ -916,15 +1162,20 @@
       const lbl = ok ? 'Fueled and ready' : F().torchGot ? 'Got it, but it needs fuel (JunkNet)' : 'Vex has one. She wants something shiny.';
       rows = rows.replace('</li>', `</li><li class="part ${ok ? 'installed' : F().torchGot ? 'found' : 'missing'}"><span class="chk">${ok ? '✔' : F().torchGot ? '●' : '○'}</span><span class="pn">Cutting torch (tool)</span><span class="pw">${esc(lbl)}</span></li>`);
     }
+    if (key === 'nav') {
+      const sf = F().scannerFixed;
+      const lbl = sf ? 'Fixed and pinging' : F().scannerTaken ? 'Needs a resonance coil (somewhere in the woods)' : "Racket's old one is in a garage drawer";
+      rows += `<li class="part ${sf ? 'installed' : F().scannerTaken ? 'found' : 'missing'}"><span class="chk">${sf ? '✔' : F().scannerTaken ? '●' : '○'}</span><span class="pn">Working scanner</span><span class="pw">${esc(lbl)}</span></li>`;
+    }
     return rows;
   }
   function openShip(fromCrash) {
     const first = fromCrash && !F().sawDiag;
-    const online = (S.repairs.fuel ? 1 : 0) + (S.repairs.thrusters ? 1 : 0);
+    const online = (S.repairs.fuel ? 1 : 0) + (S.repairs.thrusters ? 1 : 0) + (S.repairs.nav ? 1 : 0);
     const rows = SYSTEMS.map((s) => {
       const done = S.repairs[s.id];
-      const active = (s.id === 'fuel' && !done) || (s.id === 'thrusters' && S.repairs.fuel && F().phase1 && !done);
-      if (done) return `<div class="sys done"><div class="sys-head"><span class="sys-name">${s.name}</span><span class="chip ok">ONLINE</span></div><p class="sys-note">${s.id === 'fuel' ? "Humming happily. Racket pretends he isn't proud of it." : 'Test-fired. Roars like a dragon with hiccups.'}</p></div>`;
+      const active = (s.id === 'fuel' && !done) || (s.id === 'thrusters' && S.repairs.fuel && F().phase1 && !done) || (s.id === 'nav' && S.repairs.thrusters && P3() && !done);
+      if (done) return `<div class="sys done"><div class="sys-head"><span class="sys-name">${s.name}</span><span class="chip ok">ONLINE</span></div><p class="sys-note">${s.id === 'fuel' ? "Humming happily. Racket pretends he isn't proud of it." : s.id === 'thrusters' ? 'Test-fired. Roars like a dragon with hiccups.' : 'CONFIDENT. Current location: Verdance. Current mood: hopeful.'}</p></div>`;
       if (active) return `<div class="sys active"><div class="sys-head"><span class="sys-name">${s.name}</span><span class="chip bad">${s.id === 'fuel' ? 'CRITICAL' : 'OFFLINE'}</span></div><p class="sys-note">${esc(s.diag)}</p><ul class="parts">${partRows(s.id)}</ul></div>`;
       return `<div class="sys locked"><div class="sys-head"><span class="sys-name">${s.name}</span><span class="chip warn">${first ? 'DAMAGED' : 'LOCKED'}</span></div>
         <p class="sys-note">${esc(first || !F().metRacket ? s.diag : s.lockedHint)}</p></div>`;
@@ -944,7 +1195,15 @@
     bolts2: { run: (cb) => Mini.bolts(2, cb), reward: 12, f: 3, line: "Nuts with nuts, washers with washers. Vex is gonna hate how organised this is. Twelve credits." },
     tune: { run: (cb) => Mini.tune(cb), reward: 12, f: 3, line: "Listen to that idle. Smooth. ...Okay, you've got good hands. Twelve credits." },
     wires: { run: (cb) => Mini.wires(cb), reward: 12, f: 3, line: "Not a single spark. Who ARE you? Twelve credits. And my respect. Don't spend it all at once." },
+    bolts3: { run: (cb) => Mini.bolts(3, cb), reward: 14, f: 3, line: "You sorted the springs AND left the socks alone. You understand this place now, lynx. Fourteen credits." },
   };
+  const FUN = [
+    { id: 'fireflies', name: 'FIREFLY LANTERNS', body: 'Catch fireflies, light lanterns. Pip referees.', ok: () => F().gladeLit, run: (cb) => Mini.fireflies(cb) },
+    { id: 'roots', name: 'ROOT MAZE', body: 'Turn the roots, guide the light.', ok: () => F().rootsCleared, run: (cb) => Mini.roots(cb) },
+    { id: 'starmap', name: 'STAR MAP', body: 'Rebuild constellations. Yes, the Wrench counts.', ok: () => F().navCalibrated, run: (cb) => Mini.starmap(cb) },
+    { id: 'breakers', name: "BERTHA'S BREAKERS", body: 'Get every breaker green.', ok: () => F().cranePower, run: (cb) => Mini.breakers(cb) },
+    { id: 'gasket', name: 'GASKET CUTTING', body: 'Trace the outline, 1 to 16.', ok: () => S.repairs.thrusters, run: (cb) => Mini.gasket(cb) },
+  ];
   const REPLAY_LINES = ['Again? ...Fine. Two credits. Go wild.', "You just like doing that, huh. Me too. Don't tell anyone.", 'Two credits. And a nod. *nods*', 'You know these are chores, right? ...Okay. Two credits.'];
   function playJob(id) {
     const J = JOB_GAMES[id];
@@ -973,10 +1232,17 @@
       const btn = JOB_GAMES[j.id] ? `<button class="btn note-btn" data-job="${j.id}">${st === 'done' ? 'Play again · 2 cr' : 'Start'}</button>` : '';
       return `<div class="note n${i % 5} ${st === 'done' ? 'done' : ''}"><div class="pin"></div><h3>${j.title}</h3><p>${esc(j.body)}</p><div class="note-foot"><span>${j.reward}</span><b>${status}</b></div>${btn}${st === 'done' ? '<div class="stamp">PAID</div>' : ''}</div>`;
     }).join('');
-    modal('Job Board', `<div class="board">${notes}
+    const fun = FUN.filter((g) => g.ok());
+    const funNotes = fun.length ? `<div class="fun-head">FOR FUN · 2 cr a go</div>${fun.map((g) => `<div class="note fun"><div class="pin"></div><h3>${g.name}</h3><p>${esc(g.body)}</p><button class="btn note-btn" data-fun="${g.id}">Play</button></div>`).join('')}` : '';
+    modal('Job Board', `<div class="board">${notes}${funNotes}
       <div class="note n3 flavor"><div class="pin"></div><h3>LOST</h3><p>My patience. If found, keep it.</p></div>
       <div class="note n4 flavor"><div class="pin"></div><h3>NO SOLICITORS</h3><p>This means you, Gary.${F().vexMet ? ' And you, Vex.' : ''}</p></div></div>`, { cls: 'jobs-modal' });
     $$('[data-job]', $('#modal')).forEach((b) => b.addEventListener('click', () => { Sound.sfx('click'); playJob(b.dataset.job); }));
+    $$('[data-fun]', $('#modal')).forEach((b) => b.addEventListener('click', () => {
+      Sound.sfx('click');
+      const g = FUN.find((x) => x.id === b.dataset.fun);
+      g.run(() => { S.played[g.id] = (S.played[g.id] || 0) + 1; G.addCredits(2); say('r', REPLAY_LINES[Math.random() * REPLAY_LINES.length | 0], 300); refresh(); });
+    }));
   }
 
   // ---------- JunkNet terminal ----------
@@ -986,8 +1252,9 @@
     modal('JunkNet', '', { cls: 'term-modal' });
     renderTerminal();
   }
-  const owned = (id) => (id === 'wiring' ? G.has('wiring') || S.parts.wiring : id === 'fuel' ? !!F().fuelBought : false);
-  const buyable = (l) => l.id === 'wiring' || l.id === 'fuel';
+  const owned = (id) => (id === 'wiring' ? G.has('wiring') || S.parts.wiring : id === 'fuel' ? !!F().fuelBought : id === 'nav' ? !!F().chipBought || (P3() && (G.has('nav_chip') || S.parts.chip)) : false);
+  const buyable = (l) => l.id === 'wiring' || l.id === 'fuel' || (l.id === 'nav' && P3());
+  const listing = (l) => (l.id === 'nav' && P3() ? { ...l, ...DATA.navBack } : l);
   function renderTerminal(msg) {
     const body = $('#modal .modal-body');
     if (!F().termUnlocked) {
@@ -1011,7 +1278,7 @@ PASSWORD: ________</pre>
       return;
     }
     const sellable = S.inv.filter((i) => DATA.sellPrices[i]);
-    const listings = DATA.listings.filter((l) => !l.phase || F().phase1).map((l) => {
+    const listings = DATA.listings.filter((l) => !l.phase || (l.phase === 2 ? F().phase1 : F().phase2)).map(listing).map((l) => {
       let btn;
       if (owned(l.id)) btn = `<span class="tag ok">PURCHASED</span>`;
       else if (l.status) btn = `<span class="tag">${l.status}</span>`;
@@ -1033,13 +1300,14 @@ PASSWORD: ________</pre>
     $$('[data-joke]', body).forEach((b) => b.addEventListener('click', () => {
       Sound.sfx('error');
       const j = b.dataset.joke;
-      renderTerminal(j === 'muffler' ? `INSUFFICIENT FUNDS. You have ${S.credits} CR. You need 9,999 CR. And a reason.` : j === 'wrench' ? 'INSUFFICIENT FUNDS. The wrench understands. The wrench is always here for you.' : 'INSUFFICIENT FUNDS. Also, rude to even look.');
+      renderTerminal(j === 'jar' ? 'INSUFFICIENT INTEREST. Racket: "We are not buying a jar."' : j === 'moss' ? 'PURCHASE BLOCKED BY USER rkt. Reason: "leave the moss alone."' : j === 'muffler' ? `INSUFFICIENT FUNDS. You have ${S.credits} CR. You need 9,999 CR. And a reason.` : j === 'wrench' ? 'INSUFFICIENT FUNDS. The wrench understands. The wrench is always here for you.' : 'INSUFFICIENT FUNDS. Also, rude to even look.');
     }));
     $$('[data-buy]', body).forEach((b) => b.addEventListener('click', () => {
-      const l = DATA.listings.find((x) => x.id === b.dataset.buy);
+      const l = listing(DATA.listings.find((x) => x.id === b.dataset.buy));
       if (S.credits < l.price || owned(l.id)) return;
       S.credits -= l.price;
       if (l.id === 'fuel') F().fuelBought = true;
+      if (l.id === 'nav') F().chipBought = true;
       Sound.sfx('coin'); updateHud(); save();
       closeModal();
       const second = F().droneSeen;
@@ -1051,6 +1319,10 @@ PASSWORD: ________</pre>
             G.give('wiring');
             say('c', 'Copper wiring harness! It has... tiny teeth marks.');
             say('r', "Possum. Classic. It'll work.", 2600);
+          } else if (l.id === 'nav') {
+            G.give('nav_chip');
+            say('c', 'A nav chip! It is wrapped in a pirate flag. Of course it is.');
+            say('r', 'Expensive. ...Vex would have given you one for free, you know.', 2600);
           } else {
             G.give('torch_fuel');
             if (!F().torchFueled) say('c', 'Torch fuel! Now I just need a torch to put it in.');
@@ -1086,14 +1358,15 @@ PASSWORD: ________</pre>
     nozzles: 'Line up the flange. Torque it down. Hauler-7 nozzles, on a scout ship. Vex would be furious. I love it.',
     gasket: 'Gasket goes between the nozzles and the engine. Seat it flat. ...That seal is perfect. Huh.',
   };
-  const currentRepair = () => (!S.repairs.fuel ? 'fuel' : F().phase1 && !S.repairs.thrusters ? 'thrusters' : null);
-  const schematic = (key, parts, charged, t) => (key === 'fuel' ? Art.fuelCellSchematic(parts, charged, t) : Art2.thrusterSchematic(parts, charged, t));
+  const currentRepair = () => (!S.repairs.fuel ? 'fuel' : F().phase1 && !S.repairs.thrusters ? 'thrusters' : P3() && !S.repairs.nav ? 'nav' : null);
+  const schematic = (key, parts, charged, t) => (key === 'fuel' ? Art.fuelCellSchematic(parts, charged, t) : key === 'thrusters' ? Art2.thrusterSchematic(parts, charged, t) : Art3.navSchematic(parts, charged, t, F().navCalibrated));
   function openWorkbench(item) {
     if (!F().metRacket) return;
     const key = currentRepair();
     if (!key) {
-      const next = S.repairs.thrusters ? 'Fuel cell and thrusters are done. Next up: <b>navigation</b>. Racket mutters something about the Deep Woods.' : 'The fuel cell is installed and humming. Next up: <b>thrusters</b>. Racket says the junkyard\'s where you\'ll find them.';
-      modal('Workbench', `<div class="bench">${schematic(S.repairs.thrusters ? 'thrusters' : 'fuel', { casing: 1, crystal: 1, wiring: 1, nozzles: 1, gasket: 1 }, true, 1)}<p class="lead">${next}</p></div>`, { cls: 'bench-modal' });
+      const next = S.repairs.nav ? 'Fuel cell, thrusters and navigation are online. Next up: <b>hull plating</b> and <b>the engine core</b>. The engine core is making a new noise.' : S.repairs.thrusters ? 'Fuel cell and thrusters are done. Next up: <b>navigation</b>. Racket mutters something about the Deep Woods.' : 'The fuel cell is installed and humming. Next up: <b>thrusters</b>. Racket says the junkyard\'s where you\'ll find them.';
+      const done = S.repairs.nav ? 'nav' : S.repairs.thrusters ? 'thrusters' : 'fuel';
+      modal('Workbench', `<div class="bench">${schematic(done, { casing: 1, crystal: 1, wiring: 1, nozzles: 1, gasket: 1, starcrystal: 1, chip: 1 }, true, 1)}<p class="lead">${next}</p></div>`, { cls: 'bench-modal' });
       return;
     }
     modal(`Workbench: ${DATA.repairs[key].name}`, '<div class="bench"></div>', { cls: 'bench-modal' });
@@ -1102,14 +1375,16 @@ PASSWORD: ________</pre>
       const p = DATA.repairs[key].parts.find((pp) => pp.item === item);
       if (p && !S.parts[p.key]) setTimeout(() => installPart(key, p.key), 300);
       else if ((item === 'copper_sheet' || item === 'ember_resin') && key === 'thrusters') setTimeout(() => craftGasket(), 300);
+      else if ((item === 'broken_scanner' || item === 'resonance_coil') && key === 'nav') setTimeout(() => fixScanner(), 300);
     }
   }
   function renderBench(key, justKey, line) {
     const el = $('#modal .bench');
     if (!el) return;
     const rep = DATA.repairs[key];
-    const all = rep.parts.every((p) => S.parts[p.key]);
-    const rows = rep.parts.map((p) => {
+    const all = rep.parts.every((p) => S.parts[p.key]) && (key !== 'nav' || F().navCalibrated);
+    const partsIn = rep.parts.every((p) => S.parts[p.key]);
+    let rows = rep.parts.map((p) => {
       const inst = S.parts[p.key], have = G.has(p.item);
       let action = inst ? '<span class="tag ok">✔</span>' : have ? `<button class="btn" data-install="${p.key}">Install</button>` : '<span class="tag">Missing</span>';
       let info = inst ? 'Installed' : have ? 'In your pack. Ready to install.' : esc(p.where);
@@ -1122,16 +1397,28 @@ PASSWORD: ________</pre>
         <div class="bench-icon">${have || inst ? Art.icon(p.item) : '<span>?</span>'}</div>
         <div class="bench-info"><b>${p.name}</b><span>${info}</span></div><div>${action}</div></div>`;
     }).join('');
+    if (key === 'nav') {
+      const sf = F().scannerFixed, hasS = G.has('broken_scanner'), hasC = G.has('resonance_coil');
+      const sAct = sf ? '<span class="tag ok">✔</span>' : hasS && hasC ? '<button class="btn" data-fix="scanner">Fix scanner</button>' : '<span class="tag">Broken</span>';
+      const sInfo = sf ? 'Pinging happily. It also reveals hidden things everywhere.' : !F().scannerTaken ? "Racket's old scanner is somewhere in the garage. Try the workbench drawer." : `Scanner ${hasS ? '✔' : '✗'} · Resonance coil ${hasC ? '✔' : '✗'}. A coil might turn up in the woods.`;
+      const cAct = F().navCalibrated ? '<span class="tag ok">✔</span>' : partsIn && sf ? '<button class="btn" data-cal="1">Calibrate</button>' : '<span class="tag">Waiting</span>';
+      const cInfo = F().navCalibrated ? 'Star map locked in. (Yes, including the Wrench.)' : 'Needs the crystal and chip installed and a working scanner.';
+      rows += `<div class="bench-row ${sf ? 'installed' : hasS && hasC ? 'ready' : 'missing'}"><div class="bench-icon">${Art.icon(sf ? 'scanner' : 'broken_scanner')}</div><div class="bench-info"><b>Scanner (tool)</b><span>${sInfo}</span></div><div>${sAct}</div></div>
+        <div class="bench-row ${F().navCalibrated ? 'installed' : partsIn && sf ? 'ready' : 'missing'}"><div class="bench-icon">${Art.icon('star_crystal')}</div><div class="bench-info"><b>Star map calibration</b><span>${cInfo}</span></div><div>${cAct}</div></div>`;
+    }
     const idle = key === 'fuel'
       ? (all ? "That's all three. Seal it up and charge it. Don't blink." : "Bring me parts. Well, bring the BENCH parts. I'll watch.")
-      : (all ? "Nozzles on, gasket seated. Let's hear her. Test-fire when you're ready." : 'Nozzles and a gasket. Bring me both and we make some noise.');
+      : key === 'thrusters' ? (all ? "Nozzles on, gasket seated. Let's hear her. Test-fire when you're ready." : 'Nozzles and a gasket. Bring me both and we make some noise.')
+        : (all ? 'Calibrated. Boot her up, lynx. Let\'s see where she thinks she is.' : 'Star crystal, nav chip, working scanner. Then we teach her the sky.');
     el.innerHTML = `<div class="schem-wrap">${schematic(key, S.parts, false, 0)}<div class="sparks"></div></div>
       <div class="bench-line"><b>Racket:</b> ${esc(line || idle)}</div>
       <div class="bench-rows">${rows}</div>
-      <div class="bench-foot"><div class="charge-bar"><i></i></div><button class="btn big" id="btn-charge" ${all ? '' : 'disabled'}>${key === 'fuel' ? 'Seal &amp; Charge' : 'Fit &amp; Test-fire'}</button></div>`;
+      <div class="bench-foot"><div class="charge-bar"><i></i></div><button class="btn big" id="btn-charge" ${all ? '' : 'disabled'}>${key === 'fuel' ? 'Seal &amp; Charge' : key === 'thrusters' ? 'Fit &amp; Test-fire' : 'Boot navigation'}</button></div>`;
     if (justKey) { const g = $(`[data-part="${justKey}"]`, el); if (g) g.classList.add('just'); burst(14); }
     $$('[data-install]', el).forEach((b) => b.addEventListener('click', () => installPart(key, b.dataset.install)));
     $$('[data-craft]', el).forEach((b) => b.addEventListener('click', craftGasket));
+    $$('[data-fix]', el).forEach((b) => b.addEventListener('click', fixScanner));
+    $$('[data-cal]', el).forEach((b) => b.addEventListener('click', calibrate));
     $('#btn-charge', el).addEventListener('click', () => chargeRepair(key));
   }
   function installPart(key, pk) {
@@ -1154,6 +1441,25 @@ PASSWORD: ________</pre>
       setTimeout(() => openWorkbench(), 350);
     }), 260);
   }
+  function fixScanner() {
+    if (!(G.has('broken_scanner') && G.has('resonance_coil'))) return;
+    G.take('broken_scanner'); G.take('resonance_coil');
+    F().scannerFixed = true;
+    G.give('scanner');
+    G.friend(2);
+    Sound.sfx('success');
+    renderBench('nav', null, "Hah! She's pinging! Go wave her around everywhere. Old scanners find old secrets. Even in places you've already been.");
+    updateHud(); save();
+  }
+  function calibrate() {
+    closeModal();
+    setTimeout(() => Mini.starmap(() => {
+      F().navCalibrated = true;
+      G.friend(2);
+      save();
+      setTimeout(() => openWorkbench(), 350);
+    }), 260);
+  }
   function burst(n) {
     const box = $('#modal .sparks');
     if (!box) return;
@@ -1170,14 +1476,14 @@ PASSWORD: ________</pre>
   function chargeRepair(key) {
     const el = $('#modal .bench');
     const btn = $('#btn-charge', el);
-    btn.disabled = true; btn.textContent = key === 'fuel' ? 'Charging...' : 'Bolting on...';
-    $$('[data-install],[data-craft]', el).forEach((b) => (b.disabled = true));
+    btn.disabled = true; btn.textContent = key === 'fuel' ? 'Charging...' : key === 'thrusters' ? 'Bolting on...' : 'Booting...';
+    $$('[data-install],[data-craft],[data-fix],[data-cal]', el).forEach((b) => (b.disabled = true));
     $('#modal .x').disabled = true;
     Sound.sfx('hum', 3);
     const bar = $('.charge-bar i', el), wrap = $('.schem-wrap', el);
     const t0 = performance.now(), dur = 3000;
     let lastSpark = 0;
-    $('.bench-line', el).innerHTML = `<b>Racket:</b> ${key === 'fuel' ? 'Here we go. Easy... easy...' : 'Torque check... seal check... okay. Okay. This is the fun part.'}`;
+    $('.bench-line', el).innerHTML = `<b>Racket:</b> ${key === 'fuel' ? 'Here we go. Easy... easy...' : key === 'thrusters' ? 'Torque check... seal check... okay. Okay. This is the fun part.' : 'Star chart loading... chip handshake... come on, girl, find yourself. ...I talk to ships. Shut up.'}`;
     const step = (now) => {
       const t = Math.min(1, (now - t0) / dur);
       bar.style.width = t * 100 + '%';
@@ -1194,10 +1500,11 @@ PASSWORD: ________</pre>
       $('#modal .x').disabled = false;
       $('.bench-line', el).innerHTML = key === 'fuel'
         ? '<b>FUEL CELL ONLINE.</b> The Dandelion\'s engine glows teal for the first time since the crash.'
-        : '<b>THRUSTERS FITTED.</b> Racket is already dragging the bay door open, looking like a kid on his birthday.';
+        : key === 'thrusters' ? '<b>THRUSTERS FITTED.</b> Racket is already dragging the bay door open, looking like a kid on his birthday.'
+          : '<b>NAVIGATION ONLINE.</b> The star map spins up on the Dandelion\'s console, and it finally knows where it is.';
       $('.bench-rows', el).innerHTML = '';
-      $('.bench-foot', el).innerHTML = `<button class="btn big" id="btn-done">${key === 'fuel' ? 'Nice!' : "Let's fire her up!"}</button>`;
-      onModalClose = () => dlg(key === 'fuel' ? 'fuelDone' : 'thrustersFit');
+      $('.bench-foot', el).innerHTML = `<button class="btn big" id="btn-done">${key === 'fuel' ? 'Nice!' : key === 'thrusters' ? "Let's fire her up!" : 'Where are we?'}</button>`;
+      onModalClose = () => dlg(key === 'fuel' ? 'fuelDone' : key === 'thrusters' ? 'thrustersFit' : 'navDone');
       $('#btn-done', el).addEventListener('click', closeModal);
     };
     requestAnimationFrame(step);
@@ -1211,8 +1518,10 @@ PASSWORD: ________</pre>
       { id: 'garage', name: "Racket's Garage", note: f.sawDiag ? 'Grumpy raccoon. Good tools.' : 'Check your ship first.', open: f.sawDiag },
       { id: 'junkyard', name: "Vex's Junkyard", note: f.phase1 ? (f.vexMet ? 'Scrap, floodlights and one very opinionated magpie.' : 'Racket: "Fine. I\'m coming with you."') : 'Racket: "Not yet. Fuel cell first."', open: !!f.phase1 },
       { id: 'woods', name: 'Woods Edge', note: f.phase1 ? 'Past the crash site. Ember-bark trees and a fallen tree.' : 'Racket: "Stay out of the woods. For now."', open: !!f.phase1 },
-      { id: 'deep', name: 'The Deep Woods', note: f.sawPath ? 'You could cut through the fallen tree... tomorrow. (Phase 3)' : 'A fallen tree blocks the path. (Phase 3)', open: false },
-      { id: 'canyon', name: '???', note: 'Racket goes quiet about the canyon.', open: false },
+      { id: 'deep', name: 'The Deep Woods', note: f.logCut ? (f.pipFed ? "Pip's shortcut. Teal trees, fireflies, a snoring mossback." : 'Walk in from the Woods Edge. Pip might know a shortcut.') : f.phase2 ? 'Cut through the fallen tree at the Woods Edge first.' : 'A fallen tree blocks the path.', open: !!(f.logCut && f.pipFed) },
+      { id: 'glade', name: 'The Glade', note: f.gladeLit ? 'The ancient glowing tree.' : 'Somewhere past the dark path.', open: !!(f.gladeLit && f.pipFed) },
+      { id: 'wreck', name: 'The Old Wreck', note: f.rootsCleared ? (f.wreckStory ? 'The Long Shot.' : 'A mossy old hauler, swallowed by roots.') : 'Something past the tangled roots.', open: !!(f.rootsCleared && f.pipFed) },
+      { id: 'canyon', name: '???', note: f.phase3 ? 'Hull plating. Something big and metal crashed in the canyon. (Coming next)' : 'Racket goes quiet about the canyon.', open: false },
       { id: 'station', name: '???', note: 'A light blinks on the ridge some nights.', open: false },
     ];
     modal('Map', `<div class="map">${locs.map((l) => `<button class="loc ${l.open ? '' : 'locked'} ${l.id === S.scene ? 'here' : ''}" data-loc="${l.id}" ${l.open ? '' : 'disabled'}>
@@ -1259,6 +1568,7 @@ PASSWORD: ________</pre>
     });
   }
   function nightScene() {
+    $('#bubbles').innerHTML = '';
     card('Later that night...', () => {
       F().noodles = true;
       S.pos.garage = 340;
@@ -1276,6 +1586,7 @@ PASSWORD: ________</pre>
     setTimeout(() => st.classList.remove('rumbling'), 3200);
   }
   function roofScene() {
+    $('#bubbles').innerHTML = '';
     card('Later, up on the garage roof...', () => {
       G.tmp.testFire = false;
       S.scene = 'roof';
@@ -1286,13 +1597,15 @@ PASSWORD: ________</pre>
   }
   function phaseEnd(n = 1) {
     if (n === 1) { F().phase1 = true; migrate(); S.pos.garage = 820; }
-    else { F().phase2 = true; S.scene = 'garage'; S.pos.garage = 820; Sound.setAmbience('garage'); }
+    else if (n === 2) { F().phase2 = true; migrate(); S.scene = 'garage'; S.pos.garage = 820; Sound.setAmbience('garage'); }
+    else { F().phase3 = true; S.pos.garage = 820; }
     save();
     render();
     updateHud();
     const P = n === 1
       ? { lead: 'The fuel cell hums, the Dandelion glows, and somebody gave you a key on a raccoon keychain.', next: '<b>Phase 2: The Junkyard.</b> Open the map when you\'re ready. Racket\'s coming with you, whether he likes it or not.' }
-      : { lead: 'The thrusters roar, Racket laughed out loud for the first time in years, and he almost told you how he crashed here.', next: 'Coming next: <b>The Deep Woods</b>. A fallen tree, a cutting torch, something with yellow eyes, and whatever Racket isn\'t telling you.' };
+      : n === 2 ? { lead: 'The thrusters roar, Racket laughed out loud for the first time in years, and he almost told you how he crashed here.', next: '<b>Phase 3: The Deep Woods.</b> Cut through the fallen tree at the Woods Edge. Bring the torch.' }
+        : { lead: 'The Dandelion knows where she is. Racket told you everything, Vex and Racket finally cleared the air, and there\'s a LONG SHOT patch on your sleeve.', next: 'Coming next: <b>hull plating</b> (something big crashed in the canyon) and <b>the engine core</b>, which is making a new noise. Racket does not like the new noise.' };
     const close = card('', null, {
       title: `End of Phase ${n}`,
       noTap: true,
@@ -1317,6 +1630,7 @@ PASSWORD: ________</pre>
       const t = Math.min(G.tier(), DATA.idle.length - 1);
       let pool = DATA.idle[t];
       if (F().phase1 && DATA.idle2) pool = pool.concat(DATA.idle2[Math.min(t, DATA.idle2.length - 1)].filter((l) => F().vexMet || !/Vex|Bertha/.test(l)));
+      if (P3() && DATA.idle3) pool = pool.concat(DATA.idle3[Math.min(t, DATA.idle3.length - 1)].filter((l) => (F().reconciled || !/Vex called/.test(l)) && (!F().patch || !/sewing/.test(l))));
       let line = pool[Math.random() * pool.length | 0];
       if (line.includes('radio') && !F().radioFixed) line = pool[0];
       say('r', line);
@@ -1397,6 +1711,9 @@ PASSWORD: ________</pre>
     // Resume an interrupted story beat
     if (S.scene === 'roof') setTimeout(() => dlg('roof'), 500);
     else if (S.repairs.thrusters && !F().phase2) setTimeout(() => roofScene(), 400);
+    else if (S.repairs.nav && !F().patch) setTimeout(() => patchScene(), 400);
+    else if (S.repairs.nav && F().patch && !F().phase3) setTimeout(() => dlg('patch2'), 500);
+    else if (F().recorderGiven && !F().reconciled) { S.scene = 'garage'; G.tmp.vexVisit = true; refresh(); setTimeout(() => dlg('reconcile'), 500); }
     else if (S.repairs.fuel && !F().noodles) setTimeout(() => dlg('fuelDone'), 500);
     else if (F().noodles && !F().phase1) setTimeout(() => dlg('noodles'), 500);
     else if (F().metRacket && !F().shipTowed) { F().shipTowed = true; refresh(); }
@@ -1424,7 +1741,7 @@ PASSWORD: ________</pre>
   // ---------------------------------------------------------------------------
   // BOOT
   // ---------------------------------------------------------------------------
-  $('#defs').innerHTML = `<defs>${Art.DEFS}${Art2.DEFS}</defs>`;
+  $('#defs').innerHTML = `<defs>${Art.DEFS}${Art2.DEFS}${Art3.DEFS}</defs>`;
   render(); updateHud(); renderTray();
   showTitle();
 })();

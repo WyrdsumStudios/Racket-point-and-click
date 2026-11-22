@@ -125,7 +125,7 @@ D.hub = (G) => {
       ["Yeah, yeah. What do you need?", "You're standing in my light. ...What is it?", "Back already?"],
       ["What's up, lynx?", "Back already? Couldn't stay away, huh, lynx?", "Hey. What do you need?"],
       ["Hey, lynx. You eat today?", "There she is. What's up?"],
-      ["Hey, sweetheart. ...I mean lynx. What's up?"],
+      ["Hey, lynx. There you are. What's up?", "Hey, lynx. Place felt too quiet. What's up?"],
     ][t]);
   const back = () => { G.tmp.again = true; return 'hub'; };
   return {
@@ -134,7 +134,10 @@ D.hub = (G) => {
       { t: "Where do I find parts for the fuel cell?", if: () => !S.repairs.fuel, go: 'hintFuel' },
       { t: "How do I fix the thrusters?", if: () => S.repairs.fuel && S.flags.phase1 && !S.repairs.thrusters, go: 'hintThrusters' },
       { t: "What's next for the ship?", if: () => S.repairs.fuel && !S.flags.phase1, say: [R('grump', "Thrusters. And for that we need the junkyard. Tomorrow."), R('smirk', "Tonight, you rest. That's an order. I'm very bossy.")], go: back },
-      { t: "What's next for the ship?", if: () => S.repairs.thrusters, say: [R('grump', "Navigation. Which means the Deep Woods. Which means that fallen tree."), R('smirk', "Tomorrow, lynx. Tonight the torch stays off. ...Mostly.")], go: back },
+      { t: "How do I fix the navigation?", if: () => S.repairs.thrusters && S.flags.phase2 && !S.repairs.nav, go: 'hintNav' },
+      { t: "What's next for the ship?", if: () => S.repairs.thrusters && !S.flags.phase2, say: [R('grump', "Navigation. Which means the Deep Woods. Which means that fallen tree."), R('smirk', "Tomorrow, lynx. Tonight the torch stays off. ...Mostly.")], go: back },
+      { t: "What's next for the ship?", if: () => S.repairs.nav, say: [R('grump', "Hull plating. Three breaches and a dent shaped like a face."), R('soft', "And the engine core. It's making a new noise. I don't like the new noise.")], go: back },
+      { t: "Here. I found this under a floorboard.", if: () => G.has('mushroom_spores'), go: 'spores' },
       { t: "Got any work for me?", go: 'hintJobs' },
       { t: "So... you and Vex?", if: () => S.flags.vexMet, go: 'racketVex' },
       { t: "Tell me about yourself.", go: 'lore' },
@@ -249,7 +252,7 @@ DATA.hang = [
     [R('soft', "Place is less quiet with you around."), R('grump', "That's a complaint. Mostly.")],
   ],
   [
-    [R('soft', "Stay as long as you want, sweetheart. ...Lynx. I said lynx.")],
+    [R('soft', "Stay as long as you want, lynx. Place feels wrong without you now."), R('grump', "...Don't quote me.")],
   ],
 ];
 D.hang = (G) => {
@@ -346,7 +349,7 @@ DATA.idle = [
   ["You still here? ...Okay.", "*mutters something about fuel ratios*", "If you're gonna stand there, at least look busy.", "Radio's better than silence. Don't tell it I said that."],
   ["Hey lynx, hand me that. ...No, the OTHER that.", "Hm. Not bad. The engine, I mean. Not you. ...You're also not bad.", "*hums along with the radio, badly*", "You hungry? I'm not offering. Just asking."],
   ["Lynx, c'mere, look at this gasket. Isn't it beautiful? ...Don't laugh.", "You're gonna miss this place. ...Or whatever."],
-  ["Hey, sweetheart— lynx. Hey lynx. Pass the grease."],
+  ["Hey lynx. Pass the grease. ...And stay a while.", "*hums, then catches you listening and stops. Then keeps humming.*"],
 ];
 
 // Racket's reaction when you hand him an item

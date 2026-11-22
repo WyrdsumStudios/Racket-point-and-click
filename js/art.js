@@ -6,6 +6,7 @@ const Art = (() => {
   // ---------- tiny helpers ----------
   let seed = 1;
   const srand = (s) => { seed = s; };
+  const state = { patch: false }; // set by the engine (e.g. Racket's LONG SHOT patch on Crystal's jacket)
   const rnd = () => { seed = (seed * 16807) % 2147483647; return (seed - 1) / 2147483646; };
   const f1 = (n) => (+n).toFixed(1);
 
@@ -259,6 +260,7 @@ const Art = (() => {
         <rect x="-40" y="-330" width="24" height="18" rx="3" fill="${JD}"/><rect x="18" y="-322" width="22" height="22" rx="3" fill="${JD}"/>
         <circle cx="29" cy="-345" r="9" fill="${TE}"/><path d="M29,-352 L31,-347 L36,-346 L32,-343 L33,-338 L29,-341 L25,-338 L26,-343 L22,-346 L27,-347Z" fill="#e8fff6"/>
         <path d="M-40,-262 L-28,-258 M-36,-270 L-24,-266" stroke="${JL}" stroke-width="2" opacity=".6"/>
+        ${state.patch ? `<g transform="translate(-44,-334) rotate(-12)"><circle r="11" fill="#1f4f43" stroke="#e2b84a" stroke-width="2.5"/><path d="M-7,-1 Q0,-6 7,-1 L5,2 Q0,0 -5,2Z" fill="#23252a"/><circle cx="-3" cy="0" r="1.2" fill="#86d65e"/><circle cx="3" cy="0" r="1.2" fill="#86d65e"/><path d="M-6,5 L6,5" stroke="#e2b84a" stroke-width="1.5"/></g>` : ''}
         <!-- belt + satchel -->
         <rect x="-46" y="-244" width="92" height="13" rx="3" fill="#3a2a20"/><rect x="-6" y="-245" width="12" height="15" rx="2" fill="none" stroke="#c9a052" stroke-width="3"/>
         <path d="M42,-368 L-40,-250" stroke="${TE}" stroke-width="9" stroke-linecap="round"/>
@@ -741,5 +743,5 @@ const Art = (() => {
       garageFg() + `<rect width="1600" height="900" fill="#0a1210" opacity=".45"/>` + overlays();
   }
 
-  return { ICONS, DEFS, overlays, racket, crystal, portrait, ship, garageBg, garageFg, garage, crashBg, crash, icon, fuelCellSchematic, bolt, sock, titleArt, sparkle };
+  return { state, ICONS, DEFS, overlays, racket, crystal, portrait, ship, garageBg, garageFg, garage, crashBg, crash, icon, fuelCellSchematic, bolt, sock, titleArt, sparkle };
 })();
