@@ -54,6 +54,16 @@ It works on desktop (mouse and keyboard) and on tablets (touch, landscape or por
 - **Story:** at the wreck, Racket tells how he crashed. He ordered Vex into the only escape pod, rode the Long Shot down alone, waited over two hundred days, then built the garage from her bones. Comfort him or give him space. Bring Vex the flight recorder and help the two of them finally clear the air. Afterwards Racket gives Crystal the Long Shot's crew patch for her jacket. Friendship can reach tier 4.
 - **Backstory fix:** the Phase 2 roof scene now makes it clear the person he told to bail was Vex, and that she landed safely.
 
+## The Garage Café
+
+A coffee cart in the garage corner, under the job board: an old espresso machine, a kettle, mismatched mugs and a creamer shelf. It's broken until Phase 1 is done, then Racket fixes it ("Don't make it weird. ...Make me something.").
+
+- **Making a drink, step by step:** pick a mug, then pull an espresso shot (timing), brew coffee or melt cocoa (stir). Steam the milk on a timing bar: too long and it scalds, and dry and wet cappuccinos want different zones. Add creamers or syrups, pick a topping, then optionally pour latte art by tracing a heart, a leaf or a little wrench.
+- **Menu:** the French Vanilla Monstrosity (French vanilla, coffee and hazelnut creamers in one cup: Racket's secret favourite), three hot chocolates (classic, whipped cream, marshmallows), four lattes (vanilla, caramel, hazelnut, seasonal ember-bark spice) and three cappuccinos (dry, wet, cinnamon).
+- **Racket reacts** to every drink in character, warmer as friendship grows, with extra lines for latte art, scalded milk, a sour or bitter shot, the wrong recipe, and his own mug. A perfect Monstrosity earns a special line and a small friendship boost. Perfect drinks add 2 credits to the tip jar.
+- **Vex drops by** sometimes and orders anything with sprinkles, because it's shiny. Sprinkles get you a 3-credit tip. Hand her the Monstrosity and she finally learns Racket's secret.
+- **Replayable** any time, like the shop chores.
+
 ## Project layout
 
 ```
@@ -67,6 +77,7 @@ js/data.js        Phase 1 items, dialogue trees, banter, shop listings, jobs
 js/data2.js       Phase 2 items, dialogue (Vex, test-fire, roof), listings, jobs
 js/data3.js       Phase 3 items, dialogue (the wreck, Vex and Racket, the patch), listings
 js/minigames.js   bolt sorting, tune-up, wires, breakers, gasket, fireflies, star map, root maze
+js/cafe.js        the Garage Café: coffee cart art, drink-making game, Racket and Vex reactions
 js/engine.js      state, scenes and hotspots, walking, dialogue runner, modals, saving
 ```
 

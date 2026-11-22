@@ -18,7 +18,7 @@
     parts: { casing: false, crystal: false, wiring: false, nozzles: false, gasket: false, starcrystal: false, chip: false },
     repairs: { fuel: false, thrusters: false, nav: false },
     jobs: { radio: 'hidden', bolts: 'hidden', scrap: 'hidden', bolts2: 'hidden', tune: 'hidden', wires: 'hidden', bolts3: 'hidden' },
-    sold: [], talked: {}, piles: { tires: 0, appliances: 0, shiny: 0 },
+    sold: [], talked: {}, piles: { tires: 0, appliances: 0, shiny: 0 }, cafe: { made: {}, monster: 0, vex: 0 },
     pos: { crash: 560, garage: 820, junkyard: 300, woods: 1250, roof: 800, deep: 300, glade: 1250, wreck: 300 }, station: 0, played: {},
   });
   let S = fresh();
@@ -39,7 +39,7 @@
       const f = fresh();
       return {
         ...f, ...d, flags: { ...d.flags }, parts: { ...f.parts, ...d.parts }, repairs: { ...f.repairs, ...d.repairs },
-        jobs: { ...f.jobs, ...d.jobs }, pos: { ...f.pos, ...d.pos }, talked: { ...d.talked }, piles: { ...f.piles, ...d.piles }, sold: d.sold || [], played: { ...d.played },
+        jobs: { ...f.jobs, ...d.jobs }, pos: { ...f.pos, ...d.pos }, talked: { ...d.talked }, piles: { ...f.piles, ...d.piles }, sold: d.sold || [], played: { ...d.played }, cafe: { made: {}, monster: 0, vex: 0, ...d.cafe },
       };
     } catch (e) { return null; }
   }
@@ -115,6 +115,7 @@
         { id: 'drawer', label: 'Workbench drawer', show: () => P3() && !F().scannerTaken, hit: [852, 514, 150, 40], walk: 900, draw: () => Art3.drawer(S), act: actDrawer },
         { id: 'floorboard', label: 'Loose floorboard', show: () => F().scannerFixed && !F().sporesTaken, hit: [430, 756, 130, 46], walk: 500, draw: () => Art3.hidden.floorboard(), act: actFloorboard },
         { id: 'bolts', label: 'Bolt bin', hit: [940, 428, 78, 64], walk: 940, draw: () => Art.garage.boltBin(S.jobs.bolts === 'done' && (!F().phase1 || S.jobs.bolts2 === 'done')), act: actBolts },
+        { id: 'cafe', label: () => (F().phase1 ? 'Garage Café' : 'Coffee corner (broken)'), hit: [350, 340, 136, 200], walk: 420, draw: () => Cafe.cartArt(S), act: actCafe },
         { id: 'couch', label: () => (mittsOnCouch() && !F().crystalTaken ? 'Couch (oven mitts?)' : F().phase1 && !F().cupTaken ? 'Couch (noodle cups)' : 'Couch'), hit: [40, 550, 384, 180], walk: 250, draw: () => Art.garage.couch(S, mittsOnCouch()), act: actCouch },
         { id: 'ship', label: 'The Dandelion', show: () => F().shipTowed, hit: [1186, 360, 394, 290], walk: 1290, draw: () => Art.garage.bayShip(S, G.tmp.testFire), act: () => openShip() },
         { id: 'racket', label: 'Racket', hit: () => [rX() - 68, 250, 140, 550], walk: () => (rX() > 600 ? 945 : 330), anyItem: true, draw: () => `<g transform="translate(${rX()},800)">${Art.racket(G.tmp.testFire ? 'laugh' : G.rMood())}</g>`, act: actRacket },
@@ -535,6 +536,20 @@
     G.friend(6);
     G.addCredits(15);
     refresh();
+  }
+  function actCafe() {
+    if (!F().phase1) {
+      say('c', 'An old espresso machine, a kettle and a shelf of creamers. Someone has taped BROKEN on the machine.');
+      say('r', "Machine's broken. Like my faith in people. I'll fix it when your ship stops being my whole life.", 2800);
+      return;
+    }
+    if (!F().cafeIntro) {
+      F().cafeIntro = true; save();
+      say('r', "I fixed the espresso machine. Don't make it weird. ...Make me something.");
+      setTimeout(() => Cafe.open(), 2200);
+      return;
+    }
+    Cafe.open();
   }
   function actPegboard() {
     if (!F().metRacket) { say('c', "Lots of tools. Not mine, though."); return; }
